@@ -1,0 +1,1 @@
+This folder is responsible for all springboot microservices architecture

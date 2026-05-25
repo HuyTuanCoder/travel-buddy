@@ -1,0 +1,1 @@
+This folder is responsible for the protbuf files for microservices communication
