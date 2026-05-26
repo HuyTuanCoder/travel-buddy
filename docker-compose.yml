@@ -314,11 +314,17 @@ services:
       - "3000:5173"
     
     environment:
-      # Backend API URL for frontend to call
-      # Uses service name 'api-gateway' within the network
-      VITE_API_URL: http://api-gateway:8000
+      # Backend API URL for browser calls in dev
+      VITE_API_URL: http://localhost:8000
       # Environment mode
-      NODE_ENV: production
+      NODE_ENV: development
+      # Improves file watching on macOS/Windows in Docker
+      #CHOKIDAR_USEPOLLING: "true"
+    
+    # Bind mount local source for hot reload => IMPORTANT FOR LOCAL DEV
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
     
     networks:
       - travel-buddy-network
