@@ -1,1 +1,336 @@
-version '3.8'
+version: '3.8'
+
+# NETWORKS CONFIGURATION
+# Defines a custom bridge network that allows all containers to communicate
+# by service name (e.g., 'auth-service' instead of IP addresses)
+networks:
+  travel-buddy-network:
+    driver: bridge
+    name: travel-buddy-network
+
+# VOLUMES CONFIGURATION
+# Persistent storage configuration for PostgreSQL to ensure data survives
+# container restarts and upgrades
+volumes:
+  postgres-data:
+    driver: local
+    name: travel-buddy-postgres-data
+
+# SERVICES CONFIGURATION
+services:
+  # PostgreSQL Database Service
+  # Hosts the shared database for all microservices
+  # Port: 5432 (standard PostgreSQL port)
+  postgres:
+    image: postgres:16-alpine  # Using Alpine for minimal image size (~50MB)
+    container_name: travel-buddy-postgres
+    
+    # Mount persistent volume to survive container restarts
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    
+    # Environment variables for database initialization
+    environment:
+      POSTGRES_USER: travelbuddy_user
+      POSTGRES_PASSWORD: travelbuddy_password_dev
+      POSTGRES_DB: travelbuddy_db
+      # Locale settings for proper character encoding
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    
+    # Network connection for internal communication
+    networks:
+      - travel-buddy-network
+    
+    # Do NOT expose to host machine - only accessible via internal network
+    # Microservices will connect to "postgres:5432" (service name) from within the network
+    
+    # Health check to ensure database is ready before services start
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U travelbuddy_user -d travelbuddy_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # API Gateway Service (Spring Boot)
+  # Entry point for all frontend requests - routes to appropriate microservices
+  # Port: 8000 (exposed to host for external access)
+  # Internal Port: 8000
+  api-gateway:
+    image: travel-buddy/api-gateway:latest
+    container_name: api-gateway
+    build:
+      context: ./backend-services/api-gateway
+      dockerfile: Dockerfile
+    
+    # Port mapping: HOST:CONTAINER
+    # 8000 on your machine -> 8000 in container
+    ports:
+      - "8000:8000"
+    
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      # Database connection string (uses service name 'postgres' and internal port)
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
+      SPRING_DATASOURCE_USERNAME: travelbuddy_user
+      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      # JVM settings for container
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    # Depends on database being healthy before starting
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    # Health check for API Gateway
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # User Service (Spring Boot)
+  # Handles user registration, profile management
+  # Port: 8001 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8001
+  user-service:
+    image: travel-buddy/user-service:latest
+    container_name: user-service
+    build:
+      context: ./backend-services/user-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
+      SPRING_DATASOURCE_USERNAME: travelbuddy_user
+      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      # Service port
+      SERVER_PORT: 8001
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Auth Service (Spring Boot)
+  # Manages JWT tokens, authentication, authorization
+  # Port: 8002 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8002
+  auth-service:
+    image: travel-buddy/auth-service:latest
+    container_name: auth-service
+    build:
+      context: ./backend-services/auth-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
+      SPRING_DATASOURCE_USERNAME: travelbuddy_user
+      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SERVER_PORT: 8002
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8002/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Expense Service (Spring Boot)
+  # Handles expense tracking and splitting between users
+  # Port: 8003 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8003
+  expense-service:
+    image: travel-buddy/expense-service:latest
+    container_name: expense-service
+    build:
+      context: ./backend-services/expense-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
+      SPRING_DATASOURCE_USERNAME: travelbuddy_user
+      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SERVER_PORT: 8003
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8003/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Itinerary Service (Spring Boot)
+  # Manages trip planning, schedules, activities
+  # Port: 8004 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8004
+  itinerary-service:
+    image: travel-buddy/itinerary-service:latest
+    container_name: itinerary-service
+    build:
+      context: ./backend-services/itinerary-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
+      SPRING_DATASOURCE_USERNAME: travelbuddy_user
+      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SERVER_PORT: 8004
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8004/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Location Service (Spring Boot)
+  # Handles location data, maps, place information
+  # Port: 8005 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8005
+  location-service:
+    image: travel-buddy/location-service:latest
+    container_name: location-service
+    build:
+      context: ./backend-services/location-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
+      SPRING_DATASOURCE_USERNAME: travelbuddy_user
+      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SERVER_PORT: 8005
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8005/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # Notification Service (Spring Boot)
+  # Sends emails, push notifications, alerts
+  # Port: 8006 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8006
+  notification-service:
+    image: travel-buddy/notification-service:latest
+    container_name: notification-service
+    build:
+      context: ./backend-services/notification-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
+      SPRING_DATASOURCE_USERNAME: travelbuddy_user
+      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SERVER_PORT: 8006
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+      # Email service configuration (update with real credentials)
+      MAIL_HOST: smtp.gmail.com
+      MAIL_PORT: 587
+      MAIL_USERNAME: your-email@gmail.com
+      MAIL_PASSWORD: your-app-password
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      postgres:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8006/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+  # React Frontend Application
+  # Serves the user interface, calls API Gateway on port 8000
+  # Port: 3000 (exposed to host for development/browser access)
+  # Internal Port: 5173 (Vite default dev server port)
+  frontend:
+    image: travel-buddy/frontend:latest
+    container_name: travel-buddy-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    
+    # Port mapping: HOST:CONTAINER
+    # 3000 on your machine → 5173 in container (or 3000 if using production build)
+    ports:
+      - "3000:5173"
+    
+    environment:
+      # Backend API URL for frontend to call
+      # Uses service name 'api-gateway' within the network
+      VITE_API_URL: http://api-gateway:8000
+      # Environment mode
+      NODE_ENV: production
+    
+    networks:
+      - travel-buddy-network
+    
+    # Frontend waits for API Gateway to be healthy
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5173"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
