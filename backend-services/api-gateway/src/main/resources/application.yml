@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: api-gateway
+  cloud:
+    gateway:
+      mvc:
+        routes:
+          - id: auth-service
+            uri: http://localhost:8002
+            predicates:
+              - Path=/auth/**
+          - id: user-service
+            uri: http://localhost:8001
+            predicates:
+              - Path=/users/**
+          - id: itinerary-service
+            uri: http://localhost:8004
+            predicates:
+              - Path=/itineraries/**
+          - id: expense-service
+            uri: http://localhost:8003
+            predicates:
+              - Path=/expenses/**
+          - id: location-service
+            uri: http://localhost:8005
+            predicates:
+              - Path=/locations/**
+          - id: notification-service
+            uri: http://localhost:8006
+            predicates:
+              - Path=/notifications/**
+
+server:
+  port: 8000
