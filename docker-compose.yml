@@ -28,12 +28,13 @@ services:
     # Mount persistent volume to survive container restarts
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./docker/db/init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
     
     # Environment variables for database initialization
     environment:
-      POSTGRES_USER: travelbuddy_user
-      POSTGRES_PASSWORD: travelbuddy_password_dev
-      POSTGRES_DB: travelbuddy_db
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
       # Locale settings for proper character encoding
       POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
     
@@ -46,7 +47,7 @@ services:
     
     # Health check to ensure database is ready before services start
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U travelbuddy_user -d travelbuddy_db"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -71,9 +72,9 @@ services:
     environment:
       SPRING_PROFILES_ACTIVE: docker
       # Database connection string (uses service name 'postgres' and internal port)
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
-      SPRING_DATASOURCE_USERNAME: travelbuddy_user
-      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=gateway
+      SPRING_DATASOURCE_USERNAME: ${GATEWAY_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${GATEWAY_DB_PASSWORD}
       # JVM settings for container
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
@@ -106,9 +107,9 @@ services:
     
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
-      SPRING_DATASOURCE_USERNAME: travelbuddy_user
-      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=app_user
+      SPRING_DATASOURCE_USERNAME: ${USER_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${USER_DB_PASSWORD}
       # Service port
       SERVER_PORT: 8001
       JAVA_OPTS: "-Xmx256m -Xms256m"
@@ -140,9 +141,9 @@ services:
     
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
-      SPRING_DATASOURCE_USERNAME: travelbuddy_user
-      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=auth
+      SPRING_DATASOURCE_USERNAME: ${AUTH_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${AUTH_DB_PASSWORD}
       SERVER_PORT: 8002
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
@@ -173,9 +174,9 @@ services:
     
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
-      SPRING_DATASOURCE_USERNAME: travelbuddy_user
-      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=expense
+      SPRING_DATASOURCE_USERNAME: ${EXPENSE_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${EXPENSE_DB_PASSWORD}
       SERVER_PORT: 8003
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
@@ -206,9 +207,9 @@ services:
     
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
-      SPRING_DATASOURCE_USERNAME: travelbuddy_user
-      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=itinerary
+      SPRING_DATASOURCE_USERNAME: ${ITINERARY_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${ITINERARY_DB_PASSWORD}
       SERVER_PORT: 8004
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
@@ -239,9 +240,9 @@ services:
     
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
-      SPRING_DATASOURCE_USERNAME: travelbuddy_user
-      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=location
+      SPRING_DATASOURCE_USERNAME: ${LOCATION_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${LOCATION_DB_PASSWORD}
       SERVER_PORT: 8005
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
@@ -272,16 +273,16 @@ services:
     
     environment:
       SPRING_PROFILES_ACTIVE: docker
-      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/travelbuddy_db
-      SPRING_DATASOURCE_USERNAME: travelbuddy_user
-      SPRING_DATASOURCE_PASSWORD: travelbuddy_password_dev
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=notification
+      SPRING_DATASOURCE_USERNAME: ${NOTIFICATION_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
       SERVER_PORT: 8006
       JAVA_OPTS: "-Xmx256m -Xms256m"
       # Email service configuration (update with real credentials)
-      MAIL_HOST: smtp.gmail.com
-      MAIL_PORT: 587
-      MAIL_USERNAME: your-email@gmail.com
-      MAIL_PASSWORD: your-app-password
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
     
     networks:
       - travel-buddy-network
@@ -315,9 +316,9 @@ services:
     
     environment:
       # Backend API URL for browser calls in dev
-      VITE_API_URL: http://localhost:8000
+      VITE_API_URL: ${VITE_API_URL}
       # Environment mode
-      NODE_ENV: development
+      NODE_ENV: ${FRONTEND_NODE_ENV}
       # Improves file watching on macOS/Windows in Docker
       #CHOKIDAR_USEPOLLING: "true"
     
