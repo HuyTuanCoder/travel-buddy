@@ -1,1 +1,285 @@
-version '3.8'
+version: '3.8'
+
+# NETWORKS CONFIGURATION
+# Defines a custom bridge network that allows all containers to communicate
+# by service name (e.g., 'auth-service' instead of IP addresses)
+networks:
+  travel-buddy-network:
+    driver: bridge
+    name: travel-buddy-network
+
+# VOLUMES CONFIGURATION
+# Persistent storage configuration for PostgreSQL to ensure data survives
+# container restarts and upgrades
+volumes:
+  postgres-data:
+    driver: local
+    name: travel-buddy-postgres-data
+
+# SERVICES CONFIGURATION
+services:
+  # PostgreSQL Database Service
+  # Hosts the shared database for all microservices
+  # Port: 5432 (standard PostgreSQL port)
+  postgres:
+    image: postgres:16-alpine  # Using Alpine for minimal image size (~50MB)
+    container_name: travel-buddy-postgres
+    
+    # Mount persistent volume to survive container restarts
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./docker/db/init.sh:/docker-entrypoint-initdb.d/01-init.sh:ro
+
+    ports:
+      - "5432:5432"
+    
+    # Environment variables for database initialization
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      AUTH_DB_USER: ${AUTH_DB_USER}
+      AUTH_DB_PASSWORD: ${AUTH_DB_PASSWORD}
+      USER_DB_USER: ${USER_DB_USER}
+      USER_DB_PASSWORD: ${USER_DB_PASSWORD}
+      EXPENSE_DB_USER: ${EXPENSE_DB_USER}
+      EXPENSE_DB_PASSWORD: ${EXPENSE_DB_PASSWORD}
+      ITINERARY_DB_USER: ${ITINERARY_DB_USER}
+      ITINERARY_DB_PASSWORD: ${ITINERARY_DB_PASSWORD}
+      LOCATION_DB_USER: ${LOCATION_DB_USER}
+      LOCATION_DB_PASSWORD: ${LOCATION_DB_PASSWORD}
+      NOTIFICATION_DB_USER: ${NOTIFICATION_DB_USER}
+      NOTIFICATION_DB_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      # Locale settings for proper character encoding
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8 --locale=en_US.UTF-8"
+    
+    # Network connection for internal communication
+    networks:
+      - travel-buddy-network
+    
+    # Do NOT expose to host machine - only accessible via internal network
+    # Microservices will connect to "postgres:5432" (service name) from within the network
+    
+
+  # API Gateway Service (Spring Boot)
+  # Entry point for all frontend requests - routes to appropriate microservices
+  # Port: 8000 (exposed to host for external access)
+  # Internal Port: 8000
+  api-gateway:
+    image: travel-buddy/api-gateway:latest
+    container_name: api-gateway
+    build:
+      context: ./backend-services/api-gateway
+      dockerfile: Dockerfile
+    
+    # Port mapping: HOST:CONTAINER
+    # 8000 on your machine -> 8000 in container
+    ports:
+      - "8000:8000"
+    
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      SERVER_PORT: 8000
+      # JVM settings for container
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    # Depends on database being healthy before starting
+    depends_on:
+      - postgres
+    
+
+  # User Service (Spring Boot)
+  # Handles user registration, profile management
+  # Port: 8001 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8001
+  user-service:
+    image: travel-buddy/user-service:latest
+    container_name: user-service
+    build:
+      context: ./backend-services/user-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=app_user
+      SPRING_DATASOURCE_USERNAME: ${USER_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${USER_DB_PASSWORD}
+      # Service port
+      SERVER_PORT: 8001
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      - postgres
+    
+
+  # Auth Service (Spring Boot)
+  # Manages JWT tokens, authentication, authorization
+  # Port: 8002 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8002
+  auth-service:
+    image: travel-buddy/auth-service:latest
+    container_name: auth-service
+    build:
+      context: ./backend-services/auth-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=auth
+      SPRING_DATASOURCE_USERNAME: ${AUTH_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${AUTH_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
+      SERVER_PORT: 8002
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      - postgres
+    
+
+  # Expense Service (Spring Boot)
+  # Handles expense tracking and splitting between users
+  # Port: 8003 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8003
+  expense-service:
+    image: travel-buddy/expense-service:latest
+    container_name: expense-service
+    build:
+      context: ./backend-services/expense-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=expense
+      SPRING_DATASOURCE_USERNAME: ${EXPENSE_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${EXPENSE_DB_PASSWORD}
+      SERVER_PORT: 8003
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      - postgres
+    
+
+  # Itinerary Service (Spring Boot)
+  # Manages trip planning, schedules, activities
+  # Port: 8004 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8004
+  itinerary-service:
+    image: travel-buddy/itinerary-service:latest
+    container_name: itinerary-service
+    build:
+      context: ./backend-services/itinerary-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=itinerary
+      SPRING_DATASOURCE_USERNAME: ${ITINERARY_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${ITINERARY_DB_PASSWORD}
+      SERVER_PORT: 8004
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      - postgres
+    
+
+  # Location Service (Spring Boot)
+  # Handles location data, maps, place information
+  # Port: 8005 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8005
+  location-service:
+    image: travel-buddy/location-service:latest
+    container_name: location-service
+    build:
+      context: ./backend-services/location-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=location
+      SPRING_DATASOURCE_USERNAME: ${LOCATION_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${LOCATION_DB_PASSWORD}
+      SERVER_PORT: 8005
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      - postgres
+    
+
+  # Notification Service (Spring Boot)
+  # Sends emails, push notifications, alerts
+  # Port: 8006 (not exposed to host - accessed via API Gateway)
+  # Internal Port: 8006
+  notification-service:
+    image: travel-buddy/notification-service:latest
+    container_name: notification-service
+    build:
+      context: ./backend-services/notification-service
+      dockerfile: Dockerfile
+    
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=notification
+      SPRING_DATASOURCE_USERNAME: ${NOTIFICATION_DB_USER}
+      SPRING_DATASOURCE_PASSWORD: ${NOTIFICATION_DB_PASSWORD}
+      SERVER_PORT: 8006
+      JAVA_OPTS: "-Xmx256m -Xms256m"
+      # Email service configuration (update with real credentials)
+      MAIL_HOST: ${MAIL_HOST}
+      MAIL_PORT: ${MAIL_PORT}
+      MAIL_USERNAME: ${MAIL_USERNAME}
+      MAIL_PASSWORD: ${MAIL_PASSWORD}
+    
+    networks:
+      - travel-buddy-network
+    
+    depends_on:
+      - postgres
+    
+
+  # React Frontend Application
+  # Serves the user interface, calls API Gateway on port 8000
+  # Port: 3000 (exposed to host for development/browser access)
+  # Internal Port: 5173 (Vite default dev server port)
+  frontend:
+    image: travel-buddy/frontend:latest
+    container_name: travel-buddy-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    
+    # Port mapping: HOST:CONTAINER
+    # 5173 on your machine → 5173 in container
+    ports:
+      - "5173:5173"
+    
+    environment:
+      # Backend API URL for browser calls in dev
+      VITE_API_URL: ${VITE_API_URL}
+      # Environment mode
+      NODE_ENV: ${FRONTEND_NODE_ENV}
+      # Improves file watching on macOS/Windows in Docker
+      #CHOKIDAR_USEPOLLING: "true"
+    
+    # Bind mount local source for hot reload => IMPORTANT FOR LOCAL DEV
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    
+    networks:
+      - travel-buddy-network
+    
+    # Frontend waits for API Gateway to be healthy
+    depends_on:
+      - api-gateway

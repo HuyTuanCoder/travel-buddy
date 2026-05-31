@@ -1,4 +1,4 @@
-package com.travelbuddy.apigateway;
+package travelbuddy.apigateway;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
