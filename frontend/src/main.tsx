@@ -9,8 +9,8 @@ import RegisterPage from './pages/public/RegisterPage.tsx'
 import UserProfilePage from './pages/user/profile/UserProfilePage.tsx'
 
 // Components
-import ProtectedRoute from './components/ProtectedRoute.tsx'
-import { AuthProvider } from './contexts/AuthContext.tsx'
+import ProtectedRoute from '@/components/ProtectedRoute.tsx'
+import { AuthProvider } from '@/contexts/AuthContext.tsx'
 
 const router = createBrowserRouter([
   {
