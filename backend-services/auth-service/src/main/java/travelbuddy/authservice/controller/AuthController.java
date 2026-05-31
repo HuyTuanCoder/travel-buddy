@@ -12,7 +12,7 @@ import travelbuddy.authservice.dto.RegisterRequest;
 import travelbuddy.authservice.service.AuthService;
 
 @RestController
-@RequestMapping("/api/auth")
+@RequestMapping("/auth")
 public class AuthController {
 
   private final AuthService authService;
