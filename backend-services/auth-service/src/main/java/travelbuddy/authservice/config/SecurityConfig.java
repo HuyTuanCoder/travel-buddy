@@ -11,6 +11,9 @@ import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import travelbuddy.authservice.repository.CredentialRepository;
 
 @Configuration
 @EnableWebSecurity
@@ -51,5 +54,16 @@ public class SecurityConfig {
   @Bean
   public AuthenticationManager authenticationManager(AuthenticationConfiguration config) throws Exception {
     return config.getAuthenticationManager();
+  }
+
+  // Define UserDetailsService bean so Spring Security can load credentials from Postgres database
+  @Bean
+  public UserDetailsService userDetailsService(CredentialRepository repository) {
+    return email -> repository.findByEmail(email)
+        .map(credential -> org.springframework.security.core.userdetails.User.withUsername(credential.getEmail())
+            .password(credential.getPasswordHash())
+            .authorities(credential.getRole())
+            .build())
+        .orElseThrow(() -> new UsernameNotFoundException("User not found with email: " + email));
   }
 }

@@ -24,7 +24,7 @@ public class JwtService {
         .setIssuedAt(new Date())
         // Token expires in 30 days
         .setExpiration(new Date(System.currentTimeMillis() + 1000L * 60 * 60 * 24 * 30))
-        .signWith(getSigningKey(), SignatureAlgorithm.ES256)
+        .signWith(getSigningKey(), SignatureAlgorithm.HS256)
         .compact();
   }
 

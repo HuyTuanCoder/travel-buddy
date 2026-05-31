@@ -3,32 +3,34 @@ spring:
     name: api-gateway
   cloud:
     gateway:
-      mvc:
-        routes:
-          - id: auth-service
-            uri: http://localhost:8002
-            predicates:
-              - Path=/auth/**
-          - id: user-service
-            uri: http://localhost:8001
-            predicates:
-              - Path=/users/**
-          - id: itinerary-service
-            uri: http://localhost:8004
-            predicates:
-              - Path=/itineraries/**
-          - id: expense-service
-            uri: http://localhost:8003
-            predicates:
-              - Path=/expenses/**
-          - id: location-service
-            uri: http://localhost:8005
-            predicates:
-              - Path=/locations/**
-          - id: notification-service
-            uri: http://localhost:8006
-            predicates:
-              - Path=/notifications/**
+      server:
+        webmvc:
+          # Here we use the actual docker container name and let Docker resolve the internet mapping itself
+          routes:
+            - id: auth-service
+              uri: http://auth-service:8002
+              predicates:
+                - Path=/auth/**
+            - id: user-service
+              uri: http://user-service:8001
+              predicates:
+                - Path=/users/**
+            - id: itinerary-service
+              uri: http://itinerary-service:8004
+              predicates:
+                - Path=/itineraries/**
+            - id: expense-service
+              uri: http://expense-service:8003
+              predicates:
+                - Path=/expenses/**
+            - id: location-service
+              uri: http://location-service:8005
+              predicates:
+                - Path=/locations/**
+            - id: notification-service
+              uri: http://notification-service:8006
+              predicates:
+                - Path=/notifications/**
 
 server:
   port: 8000

@@ -24,13 +24,15 @@ export const useLoginLogic = () => {
     setError(null)
     setIsSubmitting(true)
 
+    console.log(form)
+
     try {
       const response = await loginUser({
         email: form.email,
         password: form.password,
       })
 
-      const token = response.credentials.accessToken
+      const token = response.accessToken
       if (!token) {
         throw new Error('Missing access token from server response.')
       }

@@ -10,7 +10,9 @@ export type RegisterRequest = {
 }
 
 export type RegisterResponse = {
-  credentials: AuthCredentials
+  accessToken: string
+  refreshToken?: string
+  tokenType?: string
 }
 
 export type LoginRequest = {
@@ -19,33 +21,8 @@ export type LoginRequest = {
 }
 
 export type LoginResponse = {
-  credentials: AuthCredentials
+  accessToken: string
+  refreshToken?: string
+  tokenType?: string
 }
 
-export const getRegisterRequest = (
-  email: string,
-  password: string,
-): RegisterRequest => ({
-  email,
-  password,
-})
-
-export const getRegisterResponse = (
-  credentials: AuthCredentials,
-): RegisterResponse => ({
-  credentials,
-})
-
-export const getLoginRequest = (
-  email: string,
-  password: string,
-): LoginRequest => ({
-  email,
-  password,
-})
-
-export const getLoginResponse = (
-  credentials: AuthCredentials,
-): LoginResponse => ({
-  credentials,
-})
