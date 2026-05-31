@@ -3,12 +3,13 @@ import { createRoot } from 'react-dom/client'
 import { createBrowserRouter, RouterProvider } from 'react-router-dom'
 import './index.css'
 
-import LandingPage from './pages/landing/LandingPage.tsx'
-import LoginPage from './pages/public/LoginPage.tsx'
-import RegisterPage from './pages/public/RegisterPage.tsx'
-import UserProfilePage from './pages/user/profile/UserProfilePage.tsx'
+// Pages
+import LandingPage from '@/pages/landing/LandingPage.tsx'
+import LoginPage from '@/pages/auth/LoginPage.tsx'
+import RegisterPage from '@/pages/auth/RegisterPage.tsx'
+import UserProfilePage from '@/pages/user/profile/UserProfilePage'
 
-// Components
+// Route Protection Setup
 import ProtectedRoute from '@/components/ProtectedRoute.tsx'
 import { AuthProvider } from '@/contexts/AuthContext.tsx'
 

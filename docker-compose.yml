@@ -74,6 +74,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=gateway
       SPRING_DATASOURCE_USERNAME: ${GATEWAY_DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${GATEWAY_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
       # JVM settings for container
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
@@ -141,6 +142,7 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=auth
       SPRING_DATASOURCE_USERNAME: ${AUTH_DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${AUTH_DB_PASSWORD}
+      JWT_SECRET: ${JWT_SECRET}
       SERVER_PORT: 8002
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
