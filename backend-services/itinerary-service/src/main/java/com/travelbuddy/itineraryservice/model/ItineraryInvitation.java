@@ -5,11 +5,17 @@ import jakarta.persistence.*;
 import java.time.Instant;
 import java.util.UUID;
 
+/**
+ * Ephemeral invitation record — exists only while PENDING.
+ * Accept → delete this row + insert into itinerary_member.
+ * Decline → delete this row.
+ * The table self-cleans; no zombie rows.
+ */
 @Entity
-@Table(name = "itinerary_member", uniqueConstraints = {
+@Table(name = "itinerary_invitation", uniqueConstraints = {
     @UniqueConstraint(columnNames = {"itinerary_id", "user_id"})
 })
-public class ItineraryMember {
+public class ItineraryInvitation {
 
   @Id
   @GeneratedValue(strategy = GenerationType.UUID)
@@ -22,17 +28,17 @@ public class ItineraryMember {
   @Column(name = "user_id", nullable = false, updatable = false)
   private String userId;
 
+  // The role the user will receive when they accept
   @Enumerated(EnumType.STRING)
   @Column(nullable = false)
   private MemberRole role;
 
-  // If this row exists, the user is a confirmed member. joinedAt tracks when.
-  @Column(name = "joined_at", nullable = false, updatable = false)
-  private Instant joinedAt;
+  @Column(name = "invited_at", nullable = false, updatable = false)
+  private Instant invitedAt;
 
   @PrePersist
   protected void onCreate() {
-    joinedAt = Instant.now();
+    invitedAt = Instant.now();
   }
 
   // --- Getters and Setters ---
@@ -69,11 +75,11 @@ public class ItineraryMember {
     this.role = role;
   }
 
-  public Instant getJoinedAt() {
-    return joinedAt;
+  public Instant getInvitedAt() {
+    return invitedAt;
   }
 
-  public void setJoinedAt(Instant joinedAt) {
-    this.joinedAt = joinedAt;
+  public void setInvitedAt(Instant invitedAt) {
+    this.invitedAt = invitedAt;
   }
 }

@@ -24,17 +24,20 @@ public class ItineraryService {
 
   private final ItineraryRepository itineraryRepository;
   private final ItineraryMemberRepository memberRepository;
+  private final ItineraryInvitationRepository invitationRepository;
   private final ItineraryDayRepository dayRepository;
   private final TripStopRepository stopRepository;
   private final ItineraryMapper mapper;
 
   public ItineraryService(ItineraryRepository itineraryRepository,
                           ItineraryMemberRepository memberRepository,
+                          ItineraryInvitationRepository invitationRepository,
                           ItineraryDayRepository dayRepository,
                           TripStopRepository stopRepository,
                           ItineraryMapper mapper) {
     this.itineraryRepository = itineraryRepository;
     this.memberRepository = memberRepository;
+    this.invitationRepository = invitationRepository;
     this.dayRepository = dayRepository;
     this.stopRepository = stopRepository;
     this.mapper = mapper;
@@ -50,12 +53,12 @@ public class ItineraryService {
     Itinerary itinerary = mapper.toEntity(request, userId);
     Itinerary savedItinerary = itineraryRepository.save(itinerary);
 
-    // 2. Auto-add the creator as an OWNER member with ACCEPTED status
+    // 2. Auto-add the creator as an OWNER member (row existence = confirmed member)
     ItineraryMember ownerMember = new ItineraryMember();
     ownerMember.setItinerary(savedItinerary);
     ownerMember.setUserId(userId);
     ownerMember.setRole(MemberRole.OWNER);
-    ownerMember.setStatus(MemberStatus.ACCEPTED);
+    // joinedAt set automatically by @PrePersist
     memberRepository.save(ownerMember);
 
     // 3. Map to response and return
@@ -69,9 +72,9 @@ public class ItineraryService {
   public List<ItinerarySummaryResponse> listItineraries(String userId) {
     log.info("[listItineraries] >>> Input: userId={}", userId);
 
-    // Fetch all trips the user has accepted, with itinerary data eagerly loaded via JOIN FETCH
-    List<ItineraryMember> memberships = memberRepository.findByUserIdAndStatusWithItinerary(
-        userId, MemberStatus.ACCEPTED);
+    // Fetch all trips the user belongs to, with itinerary data eagerly loaded via JOIN FETCH
+    // No status filter needed — if a row exists in the member table, they're confirmed
+    List<ItineraryMember> memberships = memberRepository.findByUserIdWithItinerary(userId);
 
     // Map each membership to a summary card (itinerary metadata + user's role)
     List<ItinerarySummaryResponse> responses = memberships.stream()
@@ -155,7 +158,7 @@ public class ItineraryService {
     // 2. Verify the user is the OWNER — only owners can delete a trip
     verifyOwnership(itineraryId, userId);
 
-    // 3. Cascade delete in order: stops → days → members → itinerary
+    // 3. Cascade delete in order: stops → days → invitations → members → itinerary
     List<ItineraryDay> days = dayRepository.findByItineraryIdOrderByDayNumberAsc(itineraryId);
     List<UUID> dayIds = days.stream().map(ItineraryDay::getId).collect(Collectors.toList());
 
@@ -163,6 +166,7 @@ public class ItineraryService {
       stopRepository.deleteByDayIds(dayIds);
     }
     dayRepository.deleteByItineraryId(itineraryId);
+    invitationRepository.deleteByItineraryId(itineraryId);
     memberRepository.deleteByItineraryId(itineraryId);
     itineraryRepository.delete(itinerary);
 

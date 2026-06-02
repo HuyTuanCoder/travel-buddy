@@ -1,16 +1,18 @@
 package com.travelbuddy.itineraryservice.dto;
 
 import com.travelbuddy.itineraryservice.model.MemberRole;
-import com.travelbuddy.itineraryservice.model.MemberStatus;
+
+import java.time.Instant;
 
 /**
- * Nested inside ItineraryDetailResponse — represents one participant in the trip.
+ * Nested inside ItineraryDetailResponse — represents one confirmed participant.
+ * No status field needed — if they're in this list, they're a member.
  */
 public class ItineraryMemberResponse {
 
   private String userId;
   private MemberRole role;
-  private MemberStatus status;
+  private Instant joinedAt;
 
   public ItineraryMemberResponse() {}
 
@@ -20,11 +22,11 @@ public class ItineraryMemberResponse {
   public MemberRole getRole() { return role; }
   public void setRole(MemberRole role) { this.role = role; }
 
-  public MemberStatus getStatus() { return status; }
-  public void setStatus(MemberStatus status) { this.status = status; }
+  public Instant getJoinedAt() { return joinedAt; }
+  public void setJoinedAt(Instant joinedAt) { this.joinedAt = joinedAt; }
 
   @Override
   public String toString() {
-    return "ItineraryMemberResponse{userId='" + userId + "', role=" + role + ", status=" + status + "}";
+    return "ItineraryMemberResponse{userId='" + userId + "', role=" + role + "}";
   }
 }

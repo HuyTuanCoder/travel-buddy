@@ -87,7 +87,7 @@ public class ItineraryMapper {
     ItineraryMemberResponse response = new ItineraryMemberResponse();
     response.setUserId(member.getUserId());
     response.setRole(member.getRole());
-    response.setStatus(member.getStatus());
+    response.setJoinedAt(member.getJoinedAt());
     return response;
   }
 

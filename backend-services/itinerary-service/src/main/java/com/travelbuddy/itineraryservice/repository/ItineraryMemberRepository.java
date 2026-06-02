@@ -1,7 +1,6 @@
 package com.travelbuddy.itineraryservice.repository;
 
 import com.travelbuddy.itineraryservice.model.ItineraryMember;
-import com.travelbuddy.itineraryservice.model.MemberStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
@@ -15,14 +14,14 @@ import java.util.UUID;
 @Repository
 public interface ItineraryMemberRepository extends JpaRepository<ItineraryMember, UUID> {
 
-  // RBAC check: verify if a user belongs to a trip and fetch their role
+  // RBAC check: if a row exists, the user is a confirmed member. No status filtering needed.
   Optional<ItineraryMember> findByItineraryIdAndUserId(UUID itineraryId, String userId);
 
-  // List view: fetch all accepted memberships for a user, JOIN FETCH to avoid N+1 on itinerary data
-  @Query("SELECT im FROM ItineraryMember im JOIN FETCH im.itinerary WHERE im.userId = :userId AND im.status = :status")
-  List<ItineraryMember> findByUserIdAndStatusWithItinerary(@Param("userId") String userId, @Param("status") MemberStatus status);
+  // List view: fetch all trips the user belongs to, JOIN FETCH to avoid N+1 on itinerary data
+  @Query("SELECT im FROM ItineraryMember im JOIN FETCH im.itinerary WHERE im.userId = :userId")
+  List<ItineraryMember> findByUserIdWithItinerary(@Param("userId") String userId);
 
-  // Detail view: list all participants of a specific trip
+  // Detail view: list all confirmed participants of a specific trip
   List<ItineraryMember> findByItineraryId(UUID itineraryId);
 
   // Cascade delete: remove all members when an itinerary is deleted
