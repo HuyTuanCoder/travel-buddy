@@ -55,6 +55,28 @@ public class GlobalExceptionHandler {
     return new ResponseEntity<>(errorResponse, HttpStatus.FORBIDDEN);
   }
 
+  // 400 — business logic validation (e.g., can't invite yourself, invalid action)
+  @ExceptionHandler(InvalidRequestException.class)
+  public ResponseEntity<Map<String, String>> handleInvalidRequest(InvalidRequestException ex) {
+    Map<String, String> errorResponse = new HashMap<>();
+    errorResponse.put("error", "Bad Request");
+    errorResponse.put("message", ex.getMessage());
+
+    log.warn("[Invalid Request] {}", ex.getMessage());
+    return new ResponseEntity<>(errorResponse, HttpStatus.BAD_REQUEST);
+  }
+
+  // 409 — duplicate resource (e.g., user already invited, already a member)
+  @ExceptionHandler(ConflictException.class)
+  public ResponseEntity<Map<String, String>> handleConflict(ConflictException ex) {
+    Map<String, String> errorResponse = new HashMap<>();
+    errorResponse.put("error", "Conflict");
+    errorResponse.put("message", ex.getMessage());
+
+    log.warn("[Conflict] {}", ex.getMessage());
+    return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
+  }
+
   // Catch-all for any unhandled exceptions — prevents stack traces from leaking to the client
   @ExceptionHandler(Exception.class)
   public ResponseEntity<Map<String, String>> handleGeneric(Exception ex) {

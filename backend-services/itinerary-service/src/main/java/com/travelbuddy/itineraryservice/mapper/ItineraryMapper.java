@@ -81,13 +81,23 @@ public class ItineraryMapper {
     return response;
   }
 
-  // --- Nested mappers ---
+  // --- Member / Invitation mappers (public — used by MemberService) ---
 
-  private ItineraryMemberResponse toMemberResponse(ItineraryMember member) {
+  public ItineraryMemberResponse toMemberResponse(ItineraryMember member) {
     ItineraryMemberResponse response = new ItineraryMemberResponse();
     response.setUserId(member.getUserId());
     response.setRole(member.getRole());
     response.setJoinedAt(member.getJoinedAt());
+    return response;
+  }
+
+  public InvitationResponse toInvitationResponse(ItineraryInvitation invitation) {
+    InvitationResponse response = new InvitationResponse();
+    response.setId(invitation.getId());
+    response.setItineraryId(invitation.getItinerary().getId());
+    response.setUserId(invitation.getUserId());
+    response.setRole(invitation.getRole());
+    response.setInvitedAt(invitation.getInvitedAt());
     return response;
   }
 
