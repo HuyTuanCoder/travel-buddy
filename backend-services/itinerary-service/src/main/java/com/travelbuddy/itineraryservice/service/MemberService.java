@@ -29,15 +29,18 @@ public class MemberService {
   private final ItineraryMemberRepository memberRepository;
   private final ItineraryInvitationRepository invitationRepository;
   private final ItineraryMapper mapper;
+  private final AccessGuard accessGuard;
 
   public MemberService(ItineraryRepository itineraryRepository,
                        ItineraryMemberRepository memberRepository,
                        ItineraryInvitationRepository invitationRepository,
-                       ItineraryMapper mapper) {
+                       ItineraryMapper mapper,
+                       AccessGuard accessGuard) {
     this.itineraryRepository = itineraryRepository;
     this.memberRepository = memberRepository;
     this.invitationRepository = invitationRepository;
     this.mapper = mapper;
+    this.accessGuard = accessGuard;
   }
 
   // ==================== GET /itineraries/{id}/members ====================
@@ -45,8 +48,8 @@ public class MemberService {
   public MemberListResponse getMembers(UUID itineraryId, String userId) {
     log.info("[getMembers] >>> Input: itineraryId={}, userId={}", itineraryId, userId);
 
-    verifyItineraryExists(itineraryId);
-    verifyMembership(itineraryId, userId); // Any member can view the list
+    accessGuard.verifyItineraryExists(itineraryId);
+    accessGuard.verifyMembership(itineraryId, userId); // Any member can view the list
 
     List<ItineraryMember> confirmedMembers = memberRepository.findByItineraryId(itineraryId);
     List<ItineraryInvitation> pendingInvitations = invitationRepository.findByItineraryId(itineraryId);
@@ -70,8 +73,8 @@ public class MemberService {
   public InvitationResponse inviteMember(UUID itineraryId, InviteRequest request, String userId) {
     log.info("[inviteMember] >>> Input: itineraryId={}, request={}, userId={}", itineraryId, request, userId);
 
-    verifyItineraryExists(itineraryId);
-    verifyOwnership(itineraryId, userId); // Only OWNER can invite
+    accessGuard.verifyItineraryExists(itineraryId);
+    accessGuard.verifyOwnership(itineraryId, userId); // Only OWNER can invite
 
     if (request.getInviteeUserId().equals(userId)) {
       throw new InvalidRequestException("You cannot invite yourself");
@@ -149,13 +152,13 @@ public class MemberService {
   public void removeMemberOrRevokeInvite(UUID itineraryId, String targetUserId, String userId) {
     log.info("[removeMemberOrRevokeInvite] >>> Input: itineraryId={}, targetUserId={}, userId={}", itineraryId, targetUserId, userId);
 
-    verifyItineraryExists(itineraryId);
+    accessGuard.verifyItineraryExists(itineraryId);
 
     boolean isSelfRemoval = targetUserId.equals(userId);
 
     // If leaving, verify they are a member. If kicking, verify they are OWNER.
     if (isSelfRemoval) {
-       verifyMembership(itineraryId, userId);
+       accessGuard.verifyMembership(itineraryId, userId);
        
        // Owner cannot leave, they must delete the trip
        ItineraryMember selfMember = memberRepository.findByItineraryIdAndUserId(itineraryId, userId).get();
@@ -163,7 +166,7 @@ public class MemberService {
            throw new InvalidRequestException("Owner cannot leave the itinerary. Delete it or transfer ownership instead.");
        }
     } else {
-       verifyOwnership(itineraryId, userId);
+       accessGuard.verifyOwnership(itineraryId, userId);
     }
 
     // Try to find in member table
@@ -190,25 +193,4 @@ public class MemberService {
     throw new ItineraryNotFoundException("Target user is not a member or invited to this itinerary");
   }
 
-
-  // ==================== RBAC Helpers ====================
-
-  private void verifyItineraryExists(UUID itineraryId) {
-    if (!itineraryRepository.existsById(itineraryId)) {
-        throw new ItineraryNotFoundException("Itinerary not found: " + itineraryId);
-    }
-  }
-
-  private void verifyMembership(UUID itineraryId, String userId) {
-    if (memberRepository.findByItineraryIdAndUserId(itineraryId, userId).isEmpty()) {
-      throw new AccessDeniedException("User " + userId + " is not a member of itinerary " + itineraryId);
-    }
-  }
-
-  private void verifyOwnership(UUID itineraryId, String userId) {
-    Optional<ItineraryMember> member = memberRepository.findByItineraryIdAndUserId(itineraryId, userId);
-    if (member.isEmpty() || member.get().getRole() != MemberRole.OWNER) {
-      throw new AccessDeniedException("User " + userId + " is not the owner of itinerary " + itineraryId);
-    }
-  }
 }

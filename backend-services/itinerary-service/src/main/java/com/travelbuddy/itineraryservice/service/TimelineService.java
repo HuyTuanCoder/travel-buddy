@@ -1,14 +1,11 @@
 package com.travelbuddy.itineraryservice.service;
 
 import com.travelbuddy.itineraryservice.dto.*;
-import com.travelbuddy.itineraryservice.exception.AccessDeniedException;
 import com.travelbuddy.itineraryservice.exception.InvalidRequestException;
 import com.travelbuddy.itineraryservice.exception.ItineraryNotFoundException;
 import com.travelbuddy.itineraryservice.mapper.ItineraryMapper;
 import com.travelbuddy.itineraryservice.model.*;
 import com.travelbuddy.itineraryservice.repository.ItineraryDayRepository;
-import com.travelbuddy.itineraryservice.repository.ItineraryMemberRepository;
-import com.travelbuddy.itineraryservice.repository.ItineraryRepository;
 import com.travelbuddy.itineraryservice.repository.TripStopRepository;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
@@ -25,22 +22,19 @@ public class TimelineService {
 
   private static final Logger log = LoggerFactory.getLogger(TimelineService.class);
 
-  private final ItineraryRepository itineraryRepository;
-  private final ItineraryMemberRepository memberRepository;
   private final ItineraryDayRepository dayRepository;
   private final TripStopRepository stopRepository;
   private final ItineraryMapper mapper;
+  private final AccessGuard accessGuard;
 
-  public TimelineService(ItineraryRepository itineraryRepository,
-                         ItineraryMemberRepository memberRepository,
-                         ItineraryDayRepository dayRepository,
+  public TimelineService(ItineraryDayRepository dayRepository,
                          TripStopRepository stopRepository,
-                         ItineraryMapper mapper) {
-    this.itineraryRepository = itineraryRepository;
-    this.memberRepository = memberRepository;
+                         ItineraryMapper mapper,
+                         AccessGuard accessGuard) {
     this.dayRepository = dayRepository;
     this.stopRepository = stopRepository;
     this.mapper = mapper;
+    this.accessGuard = accessGuard;
   }
 
   // ==================== POST /itineraries/{id}/days ====================
@@ -49,8 +43,8 @@ public class TimelineService {
   public ItineraryDayResponse addDay(UUID itineraryId, AddDayRequest request, String userId) {
     log.info("[addDay] >>> Input: itineraryId={}, {}, userId={}", itineraryId, request, userId);
 
-    Itinerary itinerary = findItinerary(itineraryId);
-    verifyEditPermission(itineraryId, userId);
+    Itinerary itinerary = accessGuard.findItinerary(itineraryId);
+    accessGuard.verifyEditPermission(itineraryId, userId);
 
     // Auto-calculate the next day number (max + 1, or 1 if no days exist)
     int nextDayNumber = dayRepository.findMaxDayNumberByItineraryId(itineraryId)
@@ -80,7 +74,7 @@ public class TimelineService {
         .orElseThrow(() -> new ItineraryNotFoundException("Day not found: " + dayId));
 
     UUID itineraryId = day.getItinerary().getId();
-    verifyEditPermission(itineraryId, userId);
+    accessGuard.verifyEditPermission(itineraryId, userId);
 
     // Cascade: delete all stops on this day first, then the day itself
     stopRepository.deleteByDayId(dayId);
@@ -99,7 +93,7 @@ public class TimelineService {
         .orElseThrow(() -> new ItineraryNotFoundException("Day not found: " + dayId));
 
     UUID itineraryId = day.getItinerary().getId();
-    verifyEditPermission(itineraryId, userId);
+    accessGuard.verifyEditPermission(itineraryId, userId);
 
     // Auto-calculate the next visit order within this day
     int nextVisitOrder = stopRepository.findMaxVisitOrderByDayId(dayId)
@@ -133,7 +127,7 @@ public class TimelineService {
         .orElseThrow(() -> new ItineraryNotFoundException("Stop not found: " + stopId));
 
     UUID itineraryId = stop.getItineraryDay().getItinerary().getId();
-    verifyEditPermission(itineraryId, userId);
+    accessGuard.verifyEditPermission(itineraryId, userId);
 
     // Apply only non-null fields (partial update)
     if (request.getGooglePlaceId() != null) {
@@ -172,7 +166,7 @@ public class TimelineService {
         .orElseThrow(() -> new ItineraryNotFoundException("Stop not found: " + stopId));
 
     UUID itineraryId = stop.getItineraryDay().getItinerary().getId();
-    verifyEditPermission(itineraryId, userId);
+    accessGuard.verifyEditPermission(itineraryId, userId);
 
     stopRepository.delete(stop);
     log.info("[removeStop] <<< Output: stop {} deleted", stopId);
@@ -188,7 +182,7 @@ public class TimelineService {
         .orElseThrow(() -> new ItineraryNotFoundException("Day not found: " + dayId));
 
     UUID itineraryId = day.getItinerary().getId();
-    verifyEditPermission(itineraryId, userId);
+    accessGuard.verifyEditPermission(itineraryId, userId);
 
     // Fetch all existing stops for this day to validate the incoming list
     List<TripStop> existingStops = stopRepository.findByItineraryDayIdOrderByVisitOrderAsc(dayId);
@@ -225,24 +219,5 @@ public class TimelineService {
 
     log.info("[reorderStops] <<< Output: {} stops reordered", responses.size());
     return responses;
-  }
-
-  // ==================== RBAC Helpers ====================
-
-  private Itinerary findItinerary(UUID itineraryId) {
-    return itineraryRepository.findById(itineraryId)
-        .orElseThrow(() -> new ItineraryNotFoundException("Itinerary not found: " + itineraryId));
-  }
-
-  // Verifies the user is OWNER or EDITOR — both day and stop operations require edit permission
-  private void verifyEditPermission(UUID itineraryId, String userId) {
-    ItineraryMember member = memberRepository.findByItineraryIdAndUserId(itineraryId, userId)
-        .orElseThrow(() -> new AccessDeniedException(
-            "User " + userId + " is not a member of itinerary " + itineraryId));
-
-    if (member.getRole() != MemberRole.OWNER && member.getRole() != MemberRole.EDITOR) {
-      throw new AccessDeniedException(
-          "User " + userId + " does not have edit permission on itinerary " + itineraryId);
-    }
   }
 }

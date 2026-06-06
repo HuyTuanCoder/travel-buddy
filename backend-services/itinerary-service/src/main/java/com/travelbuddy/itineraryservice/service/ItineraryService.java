@@ -1,8 +1,6 @@
 package com.travelbuddy.itineraryservice.service;
 
 import com.travelbuddy.itineraryservice.dto.*;
-import com.travelbuddy.itineraryservice.exception.AccessDeniedException;
-import com.travelbuddy.itineraryservice.exception.ItineraryNotFoundException;
 import com.travelbuddy.itineraryservice.mapper.ItineraryMapper;
 import com.travelbuddy.itineraryservice.model.*;
 import com.travelbuddy.itineraryservice.repository.*;
@@ -28,19 +26,22 @@ public class ItineraryService {
   private final ItineraryDayRepository dayRepository;
   private final TripStopRepository stopRepository;
   private final ItineraryMapper mapper;
+  private final AccessGuard accessGuard;
 
   public ItineraryService(ItineraryRepository itineraryRepository,
                           ItineraryMemberRepository memberRepository,
                           ItineraryInvitationRepository invitationRepository,
                           ItineraryDayRepository dayRepository,
                           TripStopRepository stopRepository,
-                          ItineraryMapper mapper) {
+                          ItineraryMapper mapper,
+                          AccessGuard accessGuard) {
     this.itineraryRepository = itineraryRepository;
     this.memberRepository = memberRepository;
     this.invitationRepository = invitationRepository;
     this.dayRepository = dayRepository;
     this.stopRepository = stopRepository;
     this.mapper = mapper;
+    this.accessGuard = accessGuard;
   }
 
   // ==================== POST /itineraries ====================
@@ -91,11 +92,10 @@ public class ItineraryService {
     log.info("[getItineraryDetail] >>> Input: itineraryId={}, userId={}", itineraryId, userId);
 
     // 1. Verify the itinerary exists
-    Itinerary itinerary = itineraryRepository.findById(itineraryId)
-        .orElseThrow(() -> new ItineraryNotFoundException("Itinerary not found: " + itineraryId));
+    Itinerary itinerary = accessGuard.findItinerary(itineraryId);
 
     // 2. Verify the user is a member of this trip (any role can view)
-    verifyMembership(itineraryId, userId);
+    accessGuard.verifyMembership(itineraryId, userId);
 
     // 3. Fetch all related data
     List<ItineraryMember> members = memberRepository.findByItineraryId(itineraryId);
@@ -121,11 +121,10 @@ public class ItineraryService {
     log.info("[updateItinerary] >>> Input: itineraryId={}, {}, userId={}", itineraryId, request, userId);
 
     // 1. Verify the itinerary exists
-    Itinerary itinerary = itineraryRepository.findById(itineraryId)
-        .orElseThrow(() -> new ItineraryNotFoundException("Itinerary not found: " + itineraryId));
+    Itinerary itinerary = accessGuard.findItinerary(itineraryId);
 
     // 2. Verify the user has OWNER or EDITOR role
-    verifyEditPermission(itineraryId, userId);
+    accessGuard.verifyEditPermission(itineraryId, userId);
 
     // 3. Apply only the non-null fields from the request (partial update)
     if (request.getTitle() != null) {
@@ -152,11 +151,10 @@ public class ItineraryService {
     log.info("[deleteItinerary] >>> Input: itineraryId={}, userId={}", itineraryId, userId);
 
     // 1. Verify the itinerary exists
-    Itinerary itinerary = itineraryRepository.findById(itineraryId)
-        .orElseThrow(() -> new ItineraryNotFoundException("Itinerary not found: " + itineraryId));
+    Itinerary itinerary = accessGuard.findItinerary(itineraryId);
 
     // 2. Verify the user is the OWNER — only owners can delete a trip
-    verifyOwnership(itineraryId, userId);
+    accessGuard.verifyOwnership(itineraryId, userId);
 
     // 3. Cascade delete in order: stops → days → invitations → members → itinerary
     List<ItineraryDay> days = dayRepository.findByItineraryIdOrderByDayNumberAsc(itineraryId);
@@ -173,28 +171,4 @@ public class ItineraryService {
     log.info("[deleteItinerary] <<< Output: itinerary {} deleted successfully", itineraryId);
   }
 
-  // ==================== RBAC Helpers ====================
-
-  // Verifies the user belongs to this trip at all (any role)
-  private ItineraryMember verifyMembership(UUID itineraryId, String userId) {
-    return memberRepository.findByItineraryIdAndUserId(itineraryId, userId)
-        .orElseThrow(() -> new AccessDeniedException(
-            "User " + userId + " is not a member of itinerary " + itineraryId));
-  }
-
-  // Verifies the user is OWNER or EDITOR
-  private void verifyEditPermission(UUID itineraryId, String userId) {
-    ItineraryMember member = verifyMembership(itineraryId, userId);
-    if (member.getRole() != MemberRole.OWNER && member.getRole() != MemberRole.EDITOR) {
-      throw new AccessDeniedException("User " + userId + " does not have edit permission on itinerary " + itineraryId);
-    }
-  }
-
-  // Verifies the user is the OWNER
-  private void verifyOwnership(UUID itineraryId, String userId) {
-    ItineraryMember member = verifyMembership(itineraryId, userId);
-    if (member.getRole() != MemberRole.OWNER) {
-      throw new AccessDeniedException("User " + userId + " is not the owner of itinerary " + itineraryId);
-    }
-  }
 }
