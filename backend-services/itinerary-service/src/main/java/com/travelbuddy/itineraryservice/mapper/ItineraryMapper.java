@@ -101,7 +101,9 @@ public class ItineraryMapper {
     return response;
   }
 
-  private ItineraryDayResponse toDayResponse(ItineraryDay day, List<TripStop> stops) {
+  // --- Day / Stop mappers (public — used by TimelineService) ---
+
+  public ItineraryDayResponse toDayResponse(ItineraryDay day, List<TripStop> stops) {
     ItineraryDayResponse response = new ItineraryDayResponse();
     response.setId(day.getId());
     response.setDayNumber(day.getDayNumber());
@@ -112,7 +114,7 @@ public class ItineraryMapper {
     return response;
   }
 
-  private TripStopResponse toStopResponse(TripStop stop) {
+  public TripStopResponse toStopResponse(TripStop stop) {
     TripStopResponse response = new TripStopResponse();
     response.setId(stop.getId());
     response.setGooglePlaceId(stop.getGooglePlaceId());

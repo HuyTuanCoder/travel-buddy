@@ -8,6 +8,7 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 @Repository
@@ -15,6 +16,10 @@ public interface ItineraryDayRepository extends JpaRepository<ItineraryDay, UUID
 
   // Detail view: list all days for a trip, sorted chronologically
   List<ItineraryDay> findByItineraryIdOrderByDayNumberAsc(UUID itineraryId);
+
+  // Auto-number: find the highest dayNumber so we can append dayNumber = max + 1
+  @Query("SELECT MAX(d.dayNumber) FROM ItineraryDay d WHERE d.itinerary.id = :itineraryId")
+  Optional<Integer> findMaxDayNumberByItineraryId(@Param("itineraryId") UUID itineraryId);
 
   // Cascade delete: remove all days when an itinerary is deleted
   @Modifying
