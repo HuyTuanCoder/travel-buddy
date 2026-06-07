@@ -9,6 +9,31 @@ import {
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+
+const COMMON_TIMEZONES = [
+  'America/New_York',
+  'America/Chicago',
+  'America/Denver',
+  'America/Los_Angeles',
+  'America/Anchorage',
+  'Pacific/Honolulu',
+  'Europe/London',
+  'Europe/Paris',
+  'Europe/Berlin',
+  'Asia/Dubai',
+  'Asia/Tokyo',
+  'Asia/Singapore',
+  'Australia/Sydney',
+  'Pacific/Auckland',
+  'UTC'
+]
 
 // ==================== Props ====================
 
@@ -55,18 +80,27 @@ export default function CreateTripDialog({
             />
           </div>
 
-          {/* Timezone — auto-detected, editable */}
+
+
           <div className="space-y-2">
-            <Label htmlFor="trip-timezone">Timezone</Label>
-            <Input
-              id="trip-timezone"
-              placeholder="America/New_York"
+            <Label htmlFor="trip-timezone">Destination Timezone</Label>
+            <Select
               value={form.timezone}
-              onChange={(e) => onFieldChange('timezone', e.target.value)}
-              required
-            />
+              onValueChange={(val) => onFieldChange('timezone', val)}
+            >
+              <SelectTrigger id="trip-timezone">
+                <SelectValue placeholder="Select a timezone" />
+              </SelectTrigger>
+              <SelectContent>
+                {COMMON_TIMEZONES.map((tz) => (
+                  <SelectItem key={tz} value={tz}>
+                    {tz}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
             <p className="text-xs text-slate-400">
-              Auto-detected from your browser. Change if the trip is elsewhere.
+              Crucial for accurate AI scheduling and calendar syncing.
             </p>
           </div>
 

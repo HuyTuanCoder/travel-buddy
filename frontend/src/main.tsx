@@ -18,19 +18,19 @@ import RootLayout from '@/components/layout/RootLayout.tsx'
 
 const router = createBrowserRouter([
   {
-    path: '/login',
-    element: <LoginPage />,
-  },
-  {
-    path: '/register',
-    element: <RegisterPage />,
-  },
-  {
     element: <RootLayout />,
     children: [
       {
         path: '/',
         element: <LandingPage />,
+      },
+      {
+        path: '/login',
+        element: <LoginPage />,
+      },
+      {
+        path: '/register',
+        element: <RegisterPage />,
       },
       {
         element: <ProtectedRoute />,
