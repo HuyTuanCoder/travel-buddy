@@ -4,6 +4,8 @@ import com.travelbuddy.itineraryservice.dto.*;
 import com.travelbuddy.itineraryservice.mapper.ItineraryMapper;
 import com.travelbuddy.itineraryservice.model.*;
 import com.travelbuddy.itineraryservice.repository.*;
+import com.travelbuddy.itineraryservice.grpc.LocationGrpcClient;
+import com.travelbuddy.location.grpc.PlaceInfo;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +29,7 @@ public class ItineraryService {
   private final TripStopRepository stopRepository;
   private final ItineraryMapper mapper;
   private final AccessGuard accessGuard;
+  private final LocationGrpcClient locationGrpcClient;
 
   public ItineraryService(ItineraryRepository itineraryRepository,
                           ItineraryMemberRepository memberRepository,
@@ -34,7 +37,8 @@ public class ItineraryService {
                           ItineraryDayRepository dayRepository,
                           TripStopRepository stopRepository,
                           ItineraryMapper mapper,
-                          AccessGuard accessGuard) {
+                          AccessGuard accessGuard,
+                          LocationGrpcClient locationGrpcClient) {
     this.itineraryRepository = itineraryRepository;
     this.memberRepository = memberRepository;
     this.invitationRepository = invitationRepository;
@@ -42,6 +46,7 @@ public class ItineraryService {
     this.stopRepository = stopRepository;
     this.mapper = mapper;
     this.accessGuard = accessGuard;
+    this.locationGrpcClient = locationGrpcClient;
   }
 
   // ==================== POST /itineraries ====================
@@ -108,8 +113,18 @@ public class ItineraryService {
         : stopRepository.findByItineraryDayIdInOrderByVisitOrderAsc(dayIds).stream()
             .collect(Collectors.groupingBy(stop -> stop.getItineraryDay().getId()));
 
-    // 5. Assemble the full nested response
-    ItineraryDetailResponse response = mapper.toDetailResponse(itinerary, members, days, stopsByDayId);
+    // 5. Extract all unique googlePlaceIds from the stops and fetch location data
+    List<String> googlePlaceIds = stopsByDayId.values().stream()
+        .flatMap(List::stream)
+        .map(TripStop::getGooglePlaceId)
+        .filter(id -> id != null && !id.isEmpty())
+        .distinct()
+        .collect(Collectors.toList());
+
+    Map<String, PlaceInfo> locationData = locationGrpcClient.fetchPlaces(googlePlaceIds);
+
+    // 6. Assemble the full nested response, injecting location data into stops
+    ItineraryDetailResponse response = mapper.toDetailResponse(itinerary, members, days, stopsByDayId, locationData);
     log.info("[getItineraryDetail] <<< Output: {}", response);
     return response;
   }

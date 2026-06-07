@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import com.travelbuddy.location.grpc.PlaceInfo;
 
 @Component
 public class ItineraryMapper {
@@ -58,7 +59,8 @@ public class ItineraryMapper {
   public ItineraryDetailResponse toDetailResponse(Itinerary itinerary,
                                                    List<ItineraryMember> members,
                                                    List<ItineraryDay> days,
-                                                   Map<UUID, List<TripStop>> stopsByDayId) {
+                                                   Map<UUID, List<TripStop>> stopsByDayId,
+                                                   Map<String, PlaceInfo> locationData) {
     ItineraryDetailResponse response = new ItineraryDetailResponse();
     response.setId(itinerary.getId());
     response.setOwnerId(itinerary.getOwnerId());
@@ -75,7 +77,7 @@ public class ItineraryMapper {
 
     // Map each day entity, attaching its stops from the pre-grouped map
     response.setDays(days.stream()
-        .map(day -> toDayResponse(day, stopsByDayId.getOrDefault(day.getId(), Collections.emptyList())))
+        .map(day -> toDayResponse(day, stopsByDayId.getOrDefault(day.getId(), Collections.emptyList()), locationData))
         .collect(Collectors.toList()));
 
     return response;
@@ -103,18 +105,18 @@ public class ItineraryMapper {
 
   // --- Day / Stop mappers (public — used by TimelineService) ---
 
-  public ItineraryDayResponse toDayResponse(ItineraryDay day, List<TripStop> stops) {
+  public ItineraryDayResponse toDayResponse(ItineraryDay day, List<TripStop> stops, Map<String, PlaceInfo> locationData) {
     ItineraryDayResponse response = new ItineraryDayResponse();
     response.setId(day.getId());
     response.setDayNumber(day.getDayNumber());
     response.setScheduledDate(day.getScheduledDate());
     response.setStops(stops.stream()
-        .map(this::toStopResponse)
+        .map(stop -> toStopResponse(stop, locationData))
         .collect(Collectors.toList()));
     return response;
   }
 
-  public TripStopResponse toStopResponse(TripStop stop) {
+  public TripStopResponse toStopResponse(TripStop stop, Map<String, PlaceInfo> locationData) {
     TripStopResponse response = new TripStopResponse();
     response.setId(stop.getId());
     response.setGooglePlaceId(stop.getGooglePlaceId());
@@ -124,6 +126,24 @@ public class ItineraryMapper {
     response.setStopType(stop.getStopType());
     response.setEstimatedCost(stop.getEstimatedCost());
     response.setUserNotes(stop.getUserNotes());
+
+    if (stop.getGooglePlaceId() != null && locationData.containsKey(stop.getGooglePlaceId())) {
+      PlaceInfo info = locationData.get(stop.getGooglePlaceId());
+      response.setLocationName(info.getName());
+      response.setAddress(info.getFormattedAddress());
+      response.setLatitude(info.getLatitude());
+      response.setLongitude(info.getLongitude());
+      
+      // Basic Google Places Photo URL construction based on reference
+      if (!info.getPhotoReference().isEmpty()) {
+        response.setImageUrl("https://maps.googleapis.com/maps/api/place/photo?maxwidth=400&photo_reference=" 
+            + info.getPhotoReference());
+        // Note: The actual request to Google needs the API key, but for frontend it's often 
+        // proxied or the key is appended by the frontend if using Places SDK. 
+        // For now, we return the raw reference or a constructed URL that frontend will append key to.
+      }
+    }
+
     return response;
   }
 }

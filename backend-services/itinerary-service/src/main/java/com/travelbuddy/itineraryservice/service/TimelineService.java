@@ -7,6 +7,8 @@ import com.travelbuddy.itineraryservice.mapper.ItineraryMapper;
 import com.travelbuddy.itineraryservice.model.*;
 import com.travelbuddy.itineraryservice.repository.ItineraryDayRepository;
 import com.travelbuddy.itineraryservice.repository.TripStopRepository;
+import com.travelbuddy.itineraryservice.grpc.LocationGrpcClient;
+import com.travelbuddy.location.grpc.PlaceInfo;
 import jakarta.transaction.Transactional;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -26,15 +29,18 @@ public class TimelineService {
   private final TripStopRepository stopRepository;
   private final ItineraryMapper mapper;
   private final AccessGuard accessGuard;
+  private final LocationGrpcClient locationGrpcClient;
 
   public TimelineService(ItineraryDayRepository dayRepository,
                          TripStopRepository stopRepository,
                          ItineraryMapper mapper,
-                         AccessGuard accessGuard) {
+                         AccessGuard accessGuard,
+                         LocationGrpcClient locationGrpcClient) {
     this.dayRepository = dayRepository;
     this.stopRepository = stopRepository;
     this.mapper = mapper;
     this.accessGuard = accessGuard;
+    this.locationGrpcClient = locationGrpcClient;
   }
 
   // ==================== POST /itineraries/{id}/days ====================
@@ -59,7 +65,7 @@ public class TimelineService {
     ItineraryDay savedDay = dayRepository.save(day);
 
     // Return with an empty stops list — it was just created
-    ItineraryDayResponse response = mapper.toDayResponse(savedDay, Collections.emptyList());
+    ItineraryDayResponse response = mapper.toDayResponse(savedDay, Collections.emptyList(), Collections.emptyMap());
     log.info("[addDay] <<< Output: {}", response);
     return response;
   }
@@ -111,7 +117,10 @@ public class TimelineService {
     stop.setUserNotes(request.getUserNotes());
 
     TripStop savedStop = stopRepository.save(stop);
-    TripStopResponse response = mapper.toStopResponse(savedStop);
+    
+    Map<String, PlaceInfo> locationMap = request.getGooglePlaceId() != null ? 
+        locationGrpcClient.fetchPlaces(List.of(request.getGooglePlaceId())) : Collections.emptyMap();
+    TripStopResponse response = mapper.toStopResponse(savedStop, locationMap);
 
     log.info("[addStop] <<< Output: {}", response);
     return response;
@@ -150,7 +159,10 @@ public class TimelineService {
     }
 
     TripStop updatedStop = stopRepository.save(stop);
-    TripStopResponse response = mapper.toStopResponse(updatedStop);
+    
+    Map<String, PlaceInfo> locationMap = updatedStop.getGooglePlaceId() != null ? 
+        locationGrpcClient.fetchPlaces(List.of(updatedStop.getGooglePlaceId())) : Collections.emptyMap();
+    TripStopResponse response = mapper.toStopResponse(updatedStop, locationMap);
 
     log.info("[updateStop] <<< Output: {}", response);
     return response;
@@ -211,10 +223,18 @@ public class TimelineService {
     // Batch save all updated stops
     List<TripStop> savedStops = stopRepository.saveAll(existingStops);
 
+    // Fetch location data for all reordered stops
+    List<String> googlePlaceIds = savedStops.stream()
+        .map(TripStop::getGooglePlaceId)
+        .filter(id -> id != null && !id.isEmpty())
+        .distinct()
+        .collect(Collectors.toList());
+    Map<String, PlaceInfo> locationMap = locationGrpcClient.fetchPlaces(googlePlaceIds);
+
     // Return in the new order
     List<TripStopResponse> responses = savedStops.stream()
         .sorted((a, b) -> a.getVisitOrder().compareTo(b.getVisitOrder()))
-        .map(mapper::toStopResponse)
+        .map(stop -> mapper.toStopResponse(stop, locationMap))
         .collect(Collectors.toList());
 
     log.info("[reorderStops] <<< Output: {} stops reordered", responses.size());

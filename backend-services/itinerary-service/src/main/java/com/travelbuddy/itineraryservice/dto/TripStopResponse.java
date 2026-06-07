@@ -20,6 +20,13 @@ public class TripStopResponse {
   private BigDecimal estimatedCost;
   private String userNotes;
 
+  // --- Hydrated from Location Service via gRPC ---
+  private String locationName;
+  private String address;
+  private Double latitude;
+  private Double longitude;
+  private String imageUrl;
+
   public TripStopResponse() {}
 
   public UUID getId() { return id; }
@@ -45,6 +52,21 @@ public class TripStopResponse {
 
   public String getUserNotes() { return userNotes; }
   public void setUserNotes(String userNotes) { this.userNotes = userNotes; }
+
+  public String getLocationName() { return locationName; }
+  public void setLocationName(String locationName) { this.locationName = locationName; }
+
+  public String getAddress() { return address; }
+  public void setAddress(String address) { this.address = address; }
+
+  public Double getLatitude() { return latitude; }
+  public void setLatitude(Double latitude) { this.latitude = latitude; }
+
+  public Double getLongitude() { return longitude; }
+  public void setLongitude(Double longitude) { this.longitude = longitude; }
+
+  public String getImageUrl() { return imageUrl; }
+  public void setImageUrl(String imageUrl) { this.imageUrl = imageUrl; }
 
   @Override
   public String toString() {
