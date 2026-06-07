@@ -7,7 +7,7 @@ type FeatureGridProps = {
   features: Feature[]
 }
 
-const FeatureGrid = ({ features }: FeatureGridProps) => {
+export default function FeatureGrid({ features }: FeatureGridProps) {
   return (
     <section className="mx-auto w-full max-w-6xl px-6 py-16">
       <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
@@ -43,4 +43,4 @@ const FeatureGrid = ({ features }: FeatureGridProps) => {
   )
 }
 
-export default FeatureGrid
+

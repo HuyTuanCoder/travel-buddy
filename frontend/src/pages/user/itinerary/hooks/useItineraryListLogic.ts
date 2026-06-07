@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   createItinerary,
@@ -25,7 +25,7 @@ interface CreateTripForm {
 
 // ==================== Hook ====================
 
-export const useItineraryListLogic = () => {
+export function useItineraryListLogic() {
   // --- Core state ---
   const [state, setState] = useState<ItineraryListState>({
     trips: [],
@@ -44,7 +44,7 @@ export const useItineraryListLogic = () => {
   const navigate = useNavigate()
 
   // --- Fetch all trips on mount ---
-  const fetchTrips = useCallback(async () => {
+  async function fetchTrips() {
     setState((prev) => ({ ...prev, isLoading: true, error: null }))
     try {
       const trips = await listItineraries()
@@ -56,11 +56,11 @@ export const useItineraryListLogic = () => {
         error: err?.message ?? 'Failed to load trips.',
       }))
     }
-  }, [])
+  }
 
   useEffect(() => {
     fetchTrips()
-  }, [fetchTrips])
+  }, [])
 
   // --- Create a new trip ---
   const updateCreateField = (
@@ -112,7 +112,7 @@ export const useItineraryListLogic = () => {
     } catch (err: any) {
       setState((prev) => ({
         ...prev,
-        error: err?.message ?? 'Failed to delete trip.',
+        error: err?.message ?? 'Failed to archive trip.',
       }))
     }
   }

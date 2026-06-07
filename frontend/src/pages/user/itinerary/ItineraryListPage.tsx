@@ -6,7 +6,7 @@ import CreateTripDialog from './components/CreateTripDialog'
 
 // ==================== Page ====================
 
-const ItineraryListPage = () => {
+export default function ItineraryListPage() {
   const {
     trips,
     isLoading,
@@ -101,4 +101,4 @@ const ItineraryListPage = () => {
   )
 }
 
-export default ItineraryListPage
+

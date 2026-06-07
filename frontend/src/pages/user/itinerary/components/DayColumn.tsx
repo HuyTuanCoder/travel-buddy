@@ -6,7 +6,6 @@ import StopCard from './StopCard'
 import type {
   ItineraryDayResponse,
   AddStopRequest,
-  UpdateStopRequest,
   StopType,
 } from '@/types/itineraryTypes'
 
@@ -16,7 +15,6 @@ interface DayColumnProps {
   day: ItineraryDayResponse
   onRemoveDay: (dayId: string) => void
   onAddStop: (dayId: string, payload: AddStopRequest) => void
-  onUpdateStop: (stopId: string, payload: UpdateStopRequest) => void
   onRemoveStop: (stopId: string) => void
   isAddStopOpen: boolean
   onToggleAddStop: () => void
@@ -24,15 +22,14 @@ interface DayColumnProps {
 
 // ==================== Component ====================
 
-const DayColumn = ({
+export default function DayColumn({
   day,
   onRemoveDay,
   onAddStop,
-  onUpdateStop,
   onRemoveStop,
   isAddStopOpen,
   onToggleAddStop,
-}: DayColumnProps) => {
+}: DayColumnProps) {
   // Format scheduled date if it exists
   const formattedDate = day.scheduledDate
     ? new Date(day.scheduledDate + 'T00:00:00').toLocaleDateString('en-US', {
@@ -100,7 +97,6 @@ const DayColumn = ({
             <StopCard
               key={stop.id}
               stop={stop}
-              onUpdate={onUpdateStop}
               onRemove={onRemoveStop}
             />
           ))}
@@ -151,4 +147,4 @@ const DayColumn = ({
   )
 }
 
-export default DayColumn
+

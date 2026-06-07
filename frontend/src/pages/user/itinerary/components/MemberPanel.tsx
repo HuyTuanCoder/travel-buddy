@@ -26,7 +26,7 @@ const roleStyles: Record<string, string> = {
 
 // ==================== Component ====================
 
-const MemberPanel = ({ members, onInvite, onRemoveMember }: MemberPanelProps) => {
+export default function MemberPanel({ members, onInvite, onRemoveMember }: MemberPanelProps) {
   // Local state for the invite form — simple enough to live here
   const [inviteUserId, setInviteUserId] = useState('')
   const [inviteRole, setInviteRole] = useState<MemberRole>('VIEWER')
@@ -138,4 +138,4 @@ const MemberPanel = ({ members, onInvite, onRemoveMember }: MemberPanelProps) =>
   )
 }
 
-export default MemberPanel
+

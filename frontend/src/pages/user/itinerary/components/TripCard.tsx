@@ -33,7 +33,7 @@ const roleStyles: Record<string, string> = {
 
 // ==================== Component ====================
 
-const TripCard = ({ trip, onDelete }: TripCardProps) => {
+export default function TripCard({ trip, onDelete }: TripCardProps) {
   const navigate = useNavigate()
 
   // Format the creation date for display
@@ -112,4 +112,4 @@ const TripCard = ({ trip, onDelete }: TripCardProps) => {
   )
 }
 
-export default TripCard
+

@@ -1,4 +1,4 @@
-const CallToAction = () => {
+export default function CallToAction() {
   return (
     <section className="mx-auto w-full max-w-6xl px-6 pb-20">
       <div className="flex flex-col gap-6 rounded-3xl bg-slate-900 px-8 py-10 text-white shadow-lg shadow-blue-100/60 md:flex-row md:items-center md:justify-between">
@@ -21,5 +21,3 @@ const CallToAction = () => {
     </section>
   )
 }
-
-export default CallToAction

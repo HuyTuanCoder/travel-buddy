@@ -1,7 +1,7 @@
 import { useProfilePageLogic } from './useProfilePageLogic'
 import ProfileOverview from './components/ProfileOverview'
 
-const UserProfilePage = () => {
+export default function UserProfilePage() {
   useProfilePageLogic()
 
   return (
@@ -13,4 +13,4 @@ const UserProfilePage = () => {
   )
 }
 
-export default UserProfilePage
+

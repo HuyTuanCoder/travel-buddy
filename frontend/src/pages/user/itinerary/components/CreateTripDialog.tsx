@@ -23,14 +23,14 @@ interface CreateTripDialogProps {
 
 // ==================== Component ====================
 
-const CreateTripDialog = ({
+export default function CreateTripDialog({
   open,
   onOpenChange,
   form,
   onFieldChange,
   onSubmit,
   isSubmitting,
-}: CreateTripDialogProps) => {
+}: CreateTripDialogProps) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -89,4 +89,4 @@ const CreateTripDialog = ({
   )
 }
 
-export default CreateTripDialog
+

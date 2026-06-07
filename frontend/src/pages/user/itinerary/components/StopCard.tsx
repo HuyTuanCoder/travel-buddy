@@ -1,12 +1,11 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import type { TripStopResponse, UpdateStopRequest } from '@/types/itineraryTypes'
+import type { TripStopResponse } from '@/types/itineraryTypes'
 
 // ==================== Props ====================
 
 interface StopCardProps {
   stop: TripStopResponse
-  onUpdate: (stopId: string, payload: UpdateStopRequest) => void
   onRemove: (stopId: string) => void
 }
 
@@ -21,7 +20,7 @@ const stopTypeStyles: Record<string, string> = {
 
 // ==================== Component ====================
 
-const StopCard = ({ stop, onUpdate, onRemove }: StopCardProps) => {
+export default function StopCard({ stop, onRemove }: StopCardProps) {
   // Format time for display (HH:mm → "10:30 AM")
   const formatTime = (time: string | null): string | null => {
     if (!time) return null
@@ -91,4 +90,4 @@ const StopCard = ({ stop, onUpdate, onRemove }: StopCardProps) => {
   )
 }
 
-export default StopCard
+

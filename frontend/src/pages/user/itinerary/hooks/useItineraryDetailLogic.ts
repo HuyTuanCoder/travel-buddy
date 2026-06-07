@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getItineraryDetail, updateItinerary, deleteItinerary } from '@/services/itinerary/itineraryService'
 import { getMembers, inviteMember, removeMember } from '@/services/itinerary/memberService'
@@ -26,7 +26,7 @@ interface DetailState {
 
 // ==================== Hook ====================
 
-export const useItineraryDetailLogic = (itineraryId: string) => {
+export function useItineraryDetailLogic(itineraryId: string) {
   const [state, setState] = useState<DetailState>({
     itinerary: null,
     members: null,
@@ -42,7 +42,7 @@ export const useItineraryDetailLogic = (itineraryId: string) => {
   // ==================== Data Fetching ====================
 
   // Fetch full itinerary detail (days, stops, members)
-  const fetchDetail = useCallback(async () => {
+  async function fetchDetail() {
     setState((prev) => ({ ...prev, isLoading: true, error: null }))
     try {
       const [detail, memberList] = await Promise.all([
@@ -62,7 +62,7 @@ export const useItineraryDetailLogic = (itineraryId: string) => {
         error: err?.message ?? 'Failed to load trip details.',
       }))
     }
-  }, [itineraryId])
+  }
 
   useEffect(() => {
     fetchDetail()

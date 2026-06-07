@@ -1,3 +1,3 @@
-export const useProfilePageLogic = () => {
+export function useProfilePageLogic() {
   return {}
 }

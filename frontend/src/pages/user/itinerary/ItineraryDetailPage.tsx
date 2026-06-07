@@ -17,7 +17,7 @@ const statusStyles: Record<string, string> = {
 
 // ==================== Page ====================
 
-const ItineraryDetailPage = () => {
+export default function ItineraryDetailPage() {
   // Extract itinerary ID from the URL
   const { id } = useParams<{ id: string }>()
 
@@ -33,7 +33,6 @@ const ItineraryDetailPage = () => {
     addStopDayId,
     setAddStopDayId,
     handleAddStop,
-    handleUpdateStop,
     handleRemoveStop,
     handleInvite,
     handleRemoveMember,
@@ -148,7 +147,6 @@ const ItineraryDetailPage = () => {
                 day={day}
                 onRemoveDay={handleRemoveDay}
                 onAddStop={handleAddStop}
-                onUpdateStop={handleUpdateStop}
                 onRemoveStop={handleRemoveStop}
                 isAddStopOpen={addStopDayId === day.id}
                 onToggleAddStop={() =>
@@ -181,4 +179,4 @@ const ItineraryDetailPage = () => {
   )
 }
 
-export default ItineraryDetailPage
+

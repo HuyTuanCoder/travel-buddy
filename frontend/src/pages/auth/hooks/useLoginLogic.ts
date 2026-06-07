@@ -8,7 +8,7 @@ type LoginState = {
   password: string
 }
 
-export const useLoginLogic = () => {
+export function useLoginLogic() {
   const [form, setForm] = useState<LoginState>({ email: '', password: '' })
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)

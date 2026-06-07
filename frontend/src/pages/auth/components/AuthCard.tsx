@@ -7,7 +7,7 @@ type AuthCardProps = {
   children: ReactNode
 }
 
-const AuthCard = ({ title, subtitle, children }: AuthCardProps) => {
+export default function AuthCard({ title, subtitle, children }: AuthCardProps) {
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
@@ -19,4 +19,4 @@ const AuthCard = ({ title, subtitle, children }: AuthCardProps) => {
   )
 }
 
-export default AuthCard
+
