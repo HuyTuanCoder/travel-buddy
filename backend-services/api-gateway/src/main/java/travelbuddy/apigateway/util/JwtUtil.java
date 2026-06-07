@@ -23,6 +23,15 @@ public class JwtUtil {
         .parseClaimsJws(token);
   }
 
+  public String extractUserId(String token) {
+    return Jwts.parserBuilder()
+        .setSigningKey(getSigningKey())
+        .build()
+        .parseClaimsJws(token)
+        .getBody()
+        .getSubject();
+  }
+
   private Key getSigningKey() {
     byte[] keyBytes = Decoders.BASE64.decode(secretKey);
     return Keys.hmacShaKeyFor(keyBytes);
