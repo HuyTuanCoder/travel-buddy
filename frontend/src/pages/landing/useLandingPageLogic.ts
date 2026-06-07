@@ -19,7 +19,7 @@ type LandingPageLogic = {
   stats: Stat[]
 }
 
-export const useLandingPageLogic = (): LandingPageLogic => {
+export function useLandingPageLogic(): LandingPageLogic {
   const features = [
     {
       title: 'Shared trip boards',

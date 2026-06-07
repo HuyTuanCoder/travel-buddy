@@ -2,7 +2,7 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader } from '@/components/ui/card'
 
-const ProfileOverview = () => {
+export default function ProfileOverview() {
   const { user, accessToken, clearAuth } = useAuth()
 
   return (
@@ -45,4 +45,4 @@ const ProfileOverview = () => {
   )
 }
 
-export default ProfileOverview
+

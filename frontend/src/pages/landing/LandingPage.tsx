@@ -3,7 +3,7 @@ import HeroSection from './components/HeroSection'
 import FeatureGrid from './components/FeatureGrid'
 import CallToAction from './components/CallToAction'
 
-const LandingPage = () => {
+export default function LandingPage() {
   const { features, highlights, stats } = useLandingPageLogic()
 
   return (
@@ -20,4 +20,4 @@ const LandingPage = () => {
   )
 }
 
-export default LandingPage
+

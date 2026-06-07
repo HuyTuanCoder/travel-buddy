@@ -4,7 +4,7 @@ type AuthAsideProps = {
   bullets: string[]
 }
 
-const AuthAside = ({ title, description, bullets }: AuthAsideProps) => {
+export default function AuthAside({ title, description, bullets }: AuthAsideProps) {
   return (
     <section className="hidden w-full max-w-sm flex-col gap-6 rounded-3xl border border-blue-100 bg-blue-50/70 p-6 text-slate-700 lg:flex">
       <div>
@@ -26,4 +26,4 @@ const AuthAside = ({ title, description, bullets }: AuthAsideProps) => {
   )
 }
 
-export default AuthAside
+
