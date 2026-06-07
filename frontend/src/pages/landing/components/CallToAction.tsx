@@ -1,3 +1,5 @@
+import { Link } from 'react-router-dom'
+
 export default function CallToAction() {
   return (
     <section className="mx-auto w-full max-w-6xl px-6 pb-20">
@@ -11,12 +13,12 @@ export default function CallToAction() {
             page.
           </p>
         </div>
-        <a
-          href="/register"
-          className="inline-flex items-center justify-center rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-slate-900 transition hover:bg-slate-100"
+        <Link
+          to="/register"
+          className="inline-flex h-12 items-center justify-center rounded-lg bg-white px-8 text-sm font-semibold text-slate-900 transition hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
         >
-          Create a shared itinerary
-        </a>
+          Get Started for Free
+        </Link>
       </div>
     </section>
   )

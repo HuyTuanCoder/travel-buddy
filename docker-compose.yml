@@ -271,6 +271,7 @@ services:
     environment:
       # Backend API URL for browser calls in dev
       VITE_API_URL: ${VITE_API_URL}
+      VITE_GOOGLE_MAPS_API_KEY: ${VITE_GOOGLE_MAPS_API_KEY}
       # Environment mode
       NODE_ENV: ${FRONTEND_NODE_ENV}
       # Improves file watching on macOS/Windows in Docker
