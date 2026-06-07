@@ -9,6 +9,7 @@ import { Separator } from '@/components/ui/separator'
 import { useItineraryDetailLogic } from './hooks/useItineraryDetailLogic'
 import DayColumn from './components/DayColumn'
 import MemberPanel from './components/MemberPanel'
+import TripMapVisualizer from './components/TripMapVisualizer'
 
 // ==================== Status badge styles (same as TripCard) ====================
 
@@ -172,45 +173,54 @@ export default function ItineraryDetailPage() {
 
         <Separator className="mb-8" />
 
-        {/* --- Main content: timeline + member panel --- */}
-        <div className="grid gap-8 lg:grid-cols-[1fr_280px]">
-          {/* Left: day timeline */}
-          <div className="space-y-5">
-            <DragDropContext onDragEnd={onDragEnd}>
-              {itinerary.days.map((day) => (
-                <DayColumn
-                  key={day.id}
-                  day={day}
-                  onRemoveDay={handleRemoveDay}
-                  onAddStop={handleAddStop}
-                  onUpdateStop={handleUpdateStop}
-                  onRemoveStop={handleRemoveStop}
-                  isAddStopOpen={addStopDayId === day.id}
-                  onToggleAddStop={() =>
-                    setAddStopDayId(addStopDayId === day.id ? null : day.id)
-                  }
-                />
-              ))}
-            </DragDropContext>
+        {/* --- Main content: timeline + map --- */}
+        <div className="grid gap-8 lg:grid-cols-[450px_1fr]">
+          {/* Left: day timeline & members */}
+          <div className="space-y-6">
+            <div className="space-y-5">
+              <DragDropContext onDragEnd={onDragEnd}>
+                {itinerary.days.map((day) => (
+                  <DayColumn
+                    key={day.id}
+                    day={day}
+                    onRemoveDay={handleRemoveDay}
+                    onAddStop={handleAddStop}
+                    onUpdateStop={handleUpdateStop}
+                    onRemoveStop={handleRemoveStop}
+                    isAddStopOpen={addStopDayId === day.id}
+                    onToggleAddStop={() =>
+                      setAddStopDayId(addStopDayId === day.id ? null : day.id)
+                    }
+                  />
+                ))}
+              </DragDropContext>
 
-            {/* Add day button */}
-            <Button
-              variant="outline"
-              className="w-full border-dashed border-slate-300 text-slate-500 hover:text-slate-700 hover:border-slate-400"
-              onClick={() => handleAddDay({ scheduledDate: null })}
-            >
-              + Add day {itinerary.days.length + 1}
-            </Button>
+              {/* Add day button */}
+              <Button
+                variant="outline"
+                className="w-full border-dashed border-slate-300 text-slate-500 hover:text-slate-700 hover:border-slate-400"
+                onClick={() => handleAddDay({ scheduledDate: null })}
+              >
+                + Add day {itinerary.days.length + 1}
+              </Button>
+            </div>
+
+            {/* Members panel */}
+            {members && (
+              <MemberPanel
+                members={members}
+                onInvite={handleInvite}
+                onRemoveMember={handleRemoveMember}
+              />
+            )}
           </div>
 
-          {/* Right: members panel */}
-          {members && (
-            <MemberPanel
-              members={members}
-              onInvite={handleInvite}
-              onRemoveMember={handleRemoveMember}
-            />
-          )}
+          {/* Right: sticky map visualizer */}
+          <div className="hidden lg:block relative">
+            <div className="sticky top-6 h-[calc(100vh-6rem)]">
+              <TripMapVisualizer itinerary={itinerary} />
+            </div>
+          </div>
         </div>
         </div>
       </main>
