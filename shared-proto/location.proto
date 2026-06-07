@@ -1,0 +1,35 @@
+syntax = "proto3";
+
+package com.travelbuddy.location;
+
+// Settings for Java code generation
+option java_multiple_files = true;
+option java_package = "com.travelbuddy.location.grpc";
+option java_outer_classname = "LocationProto";
+
+// The gRPC Service Definition
+service LocationGrpcService {
+  // Batch fetch places by their Google Place IDs
+  rpc GetPlacesBatch (GetPlacesBatchRequest) returns (GetPlacesBatchResponse);
+}
+
+// Request: A list of googlePlaceIds
+message GetPlacesBatchRequest {
+  repeated string google_place_ids = 1;
+}
+
+// Response: A map where key is the googlePlaceId and value is the place info
+message GetPlacesBatchResponse {
+  map<string, PlaceInfo> places = 1;
+}
+
+// The core data we return
+message PlaceInfo {
+  string google_place_id = 1;
+  string name = 2;
+  string formatted_address = 3;
+  double latitude = 4;
+  double longitude = 5;
+  string photo_reference = 6;
+  string place_types = 7;
+}

@@ -42,6 +42,8 @@ export default function ItineraryDetailPage() {
     handleReorderStops,
     handleInvite,
     handleRemoveMember,
+    handleUpdateMemberRole,
+    handleTransferOwnership,
   } = useItineraryDetailLogic(id!)
 
   const onDragEnd = (result: DropResult) => {
@@ -211,6 +213,8 @@ export default function ItineraryDetailPage() {
                 members={members}
                 onInvite={handleInvite}
                 onRemoveMember={handleRemoveMember}
+                onUpdateRole={handleUpdateMemberRole}
+                onTransferOwnership={handleTransferOwnership}
               />
             )}
           </div>

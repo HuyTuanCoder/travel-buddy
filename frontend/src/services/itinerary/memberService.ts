@@ -68,3 +68,37 @@ export const removeMember = async (
     throw error.response?.data ?? error
   }
 }
+
+// ==================== PUT /itineraries/{id}/members/{userId}/role ====================
+
+export const updateMemberRole = async (
+  itineraryId: string,
+  targetUserId: string,
+  role: string,
+): Promise<ItineraryMemberResponse> => {
+  try {
+    const response = await api.put(
+      `/itineraries/${itineraryId}/members/${targetUserId}/role`,
+      { role },
+    )
+    return response.data as ItineraryMemberResponse
+  } catch (error: any) {
+    throw error.response?.data ?? error
+  }
+}
+
+// ==================== PUT /itineraries/{id}/members/{userId}/transfer-ownership ====================
+
+export const transferOwnership = async (
+  itineraryId: string,
+  targetUserId: string,
+): Promise<ItineraryMemberResponse> => {
+  try {
+    const response = await api.put(
+      `/itineraries/${itineraryId}/members/${targetUserId}/transfer-ownership`,
+    )
+    return response.data as ItineraryMemberResponse
+  } catch (error: any) {
+    throw error.response?.data ?? error
+  }
+}

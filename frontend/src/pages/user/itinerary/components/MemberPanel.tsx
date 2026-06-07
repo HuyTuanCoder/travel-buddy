@@ -14,6 +14,8 @@ interface MemberPanelProps {
   members: MemberListResponse
   onInvite: (userId: string, role: MemberRole) => void
   onRemoveMember: (userId: string) => void
+  onUpdateRole: (userId: string, role: string) => void
+  onTransferOwnership: (userId: string) => void
 }
 
 // ==================== Role badge colors ====================
@@ -26,7 +28,7 @@ const roleStyles: Record<string, string> = {
 
 // ==================== Component ====================
 
-export default function MemberPanel({ members, onInvite, onRemoveMember }: MemberPanelProps) {
+export default function MemberPanel({ members, onInvite, onRemoveMember, onUpdateRole, onTransferOwnership }: MemberPanelProps) {
   // Local state for the invite form — simple enough to live here
   const [inviteUserId, setInviteUserId] = useState('')
   const [inviteRole, setInviteRole] = useState<MemberRole>('VIEWER')
@@ -61,18 +63,50 @@ export default function MemberPanel({ members, onInvite, onRemoveMember }: Membe
               </span>
             </div>
             <div className="flex items-center gap-2">
-              <Badge
-                variant="outline"
-                className={`text-[10px] ${roleStyles[member.role] ?? ''}`}
-              >
-                {member.role.toLowerCase()}
-              </Badge>
+              {member.role !== 'OWNER' ? (
+                <select
+                  value={member.role}
+                  onChange={(e) => onUpdateRole(member.userId, e.target.value)}
+                  className={`text-[10px] font-semibold uppercase tracking-wider rounded-full px-2 py-0.5 border outline-none ${roleStyles[member.role] ?? ''}`}
+                >
+                  <option value="EDITOR">EDITOR</option>
+                  <option value="VIEWER">VIEWER</option>
+                </select>
+              ) : (
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] ${roleStyles[member.role] ?? ''}`}
+                >
+                  owner
+                </Badge>
+              )}
+
+              {/* Show Transfer Ownership button only if looking at an EDITOR */}
+              {member.role === 'EDITOR' && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 px-2 text-[10px] opacity-0 group-hover:opacity-100 transition-opacity text-blue-600 hover:text-blue-700 bg-blue-50"
+                  onClick={() => {
+                    if (window.confirm(`Are you sure you want to transfer ownership to ${member.userId}? You will be demoted to an EDITOR.`)) {
+                      onTransferOwnership(member.userId)
+                    }
+                  }}
+                >
+                  Make Owner
+                </Button>
+              )}
+
               {member.role !== 'OWNER' && (
                 <Button
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
-                  onClick={() => onRemoveMember(member.userId)}
+                  onClick={() => {
+                    if (window.confirm(`Remove ${member.userId} from the itinerary?`)) {
+                      onRemoveMember(member.userId)
+                    }
+                  }}
                 >
                   ✕
                 </Button>

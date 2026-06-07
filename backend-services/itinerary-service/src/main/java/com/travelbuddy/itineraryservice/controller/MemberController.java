@@ -71,4 +71,29 @@ public class MemberController {
     memberService.removeMemberOrRevokeInvite(id, targetUserId, userId);
     return ResponseEntity.noContent().build();
   }
+
+  // PUT /itineraries/{id}/members/{targetUserId}/role — change a member's role
+  @PutMapping("/{id}/members/{targetUserId}/role")
+  public ResponseEntity<com.travelbuddy.itineraryservice.dto.ItineraryMemberResponse> updateMemberRole(
+      @PathVariable UUID id,
+      @PathVariable String targetUserId,
+      @Valid @RequestBody com.travelbuddy.itineraryservice.dto.UpdateMemberRoleRequest request,
+      @RequestHeader("X-User-Id") String userId) {
+
+    log.info("[Controller] PUT /itineraries/{}/members/{}/role | userId={}", id, targetUserId, userId);
+    com.travelbuddy.itineraryservice.dto.ItineraryMemberResponse response = memberService.updateMemberRole(id, targetUserId, request, userId);
+    return ResponseEntity.ok(response);
+  }
+
+  // PUT /itineraries/{id}/members/{targetUserId}/transfer-ownership — transfer ownership
+  @PutMapping("/{id}/members/{targetUserId}/transfer-ownership")
+  public ResponseEntity<com.travelbuddy.itineraryservice.dto.ItineraryMemberResponse> transferOwnership(
+      @PathVariable UUID id,
+      @PathVariable String targetUserId,
+      @RequestHeader("X-User-Id") String userId) {
+
+    log.info("[Controller] PUT /itineraries/{}/members/{}/transfer-ownership | userId={}", id, targetUserId, userId);
+    com.travelbuddy.itineraryservice.dto.ItineraryMemberResponse response = memberService.transferOwnership(id, targetUserId, userId);
+    return ResponseEntity.ok(response);
+  }
 }

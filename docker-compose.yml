@@ -176,14 +176,16 @@ services:
     image: travel-buddy/itinerary-service:latest
     container_name: itinerary-service
     build:
-      context: ./backend-services/itinerary-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend-services/itinerary-service/Dockerfile
     
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=itinerary
       SPRING_DATASOURCE_USERNAME: ${ITINERARY_DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${ITINERARY_DB_PASSWORD}
       SERVER_PORT: 8004
+      GRPC_CLIENT_LOCATION_SERVICE_ADDRESS: "static://location-service:9090"
+      GRPC_CLIENT_LOCATION_SERVICE_NEGOTIATION_TYPE: "PLAINTEXT"
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
     networks:
@@ -201,14 +203,16 @@ services:
     image: travel-buddy/location-service:latest
     container_name: location-service
     build:
-      context: ./backend-services/location-service
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./backend-services/location-service/Dockerfile
     
     environment:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}?currentSchema=location
       SPRING_DATASOURCE_USERNAME: ${LOCATION_DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${LOCATION_DB_PASSWORD}
       SERVER_PORT: 8005
+      GRPC_SERVER_PORT: 9090
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
     networks:

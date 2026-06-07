@@ -193,4 +193,64 @@ public class MemberService {
     throw new ItineraryNotFoundException("Target user is not a member or invited to this itinerary");
   }
 
+  // ==================== PUT /itineraries/{id}/members/{targetUserId}/role ====================
+
+  @Transactional
+  public ItineraryMemberResponse updateMemberRole(UUID itineraryId, String targetUserId, UpdateMemberRoleRequest request, String userId) {
+    log.info("[updateMemberRole] >>> Input: itineraryId={}, targetUserId={}, role={}, userId={}", itineraryId, targetUserId, request.getRole(), userId);
+
+    accessGuard.verifyItineraryExists(itineraryId);
+    accessGuard.verifyOwnership(itineraryId, userId);
+
+    if (targetUserId.equals(userId)) {
+      throw new InvalidRequestException("You cannot change your own role");
+    }
+
+    if (request.getRole() == MemberRole.OWNER) {
+      throw new InvalidRequestException("Cannot change role to OWNER using this endpoint. Use the transfer-ownership endpoint instead.");
+    }
+
+    ItineraryMember member = memberRepository.findByItineraryIdAndUserId(itineraryId, targetUserId)
+        .orElseThrow(() -> new ItineraryNotFoundException("Target user is not a member of this itinerary"));
+
+    member.setRole(request.getRole());
+    ItineraryMember updatedMember = memberRepository.save(member);
+
+    ItineraryMemberResponse response = mapper.toMemberResponse(updatedMember);
+    log.info("[updateMemberRole] <<< Output: {}", response);
+    return response;
+  }
+
+  // ==================== PUT /itineraries/{id}/members/{targetUserId}/transfer-ownership ====================
+
+  @Transactional
+  public ItineraryMemberResponse transferOwnership(UUID itineraryId, String targetUserId, String userId) {
+    log.info("[transferOwnership] >>> Input: itineraryId={}, targetUserId={}, userId={}", itineraryId, targetUserId, userId);
+
+    accessGuard.verifyItineraryExists(itineraryId);
+    accessGuard.verifyOwnership(itineraryId, userId);
+
+    if (targetUserId.equals(userId)) {
+      throw new InvalidRequestException("You already own this itinerary");
+    }
+
+    ItineraryMember currentOwner = memberRepository.findByItineraryIdAndUserId(itineraryId, userId)
+        .orElseThrow(() -> new AccessDeniedException("You are not a member of this itinerary"));
+
+    ItineraryMember newOwner = memberRepository.findByItineraryIdAndUserId(itineraryId, targetUserId)
+        .orElseThrow(() -> new ItineraryNotFoundException("Target user is not a member of this itinerary"));
+
+    // Demote current owner to EDITOR
+    currentOwner.setRole(MemberRole.EDITOR);
+    memberRepository.save(currentOwner);
+
+    // Promote new owner
+    newOwner.setRole(MemberRole.OWNER);
+    ItineraryMember updatedNewOwner = memberRepository.save(newOwner);
+
+    ItineraryMemberResponse response = mapper.toMemberResponse(updatedNewOwner);
+    log.info("[transferOwnership] <<< Output: {}", response);
+    return response;
+  }
+
 }
