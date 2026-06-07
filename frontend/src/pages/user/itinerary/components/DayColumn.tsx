@@ -1,12 +1,12 @@
-import React from 'react'
+
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
 import StopCard from './StopCard'
+import AddStopForm from './AddStopForm'
 import type {
   ItineraryDayResponse,
   AddStopRequest,
-  StopType,
 } from '@/types/itineraryTypes'
 
 // ==================== Props ====================
@@ -39,16 +39,7 @@ export default function DayColumn({
       })
     : null
 
-  // Handle inline add-stop form submission
-  const handleAddStopSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    const formData = new FormData(event.currentTarget)
-    const payload: AddStopRequest = {
-      googlePlaceId: formData.get('googlePlaceId') as string,
-      stopType: (formData.get('stopType') as StopType) || 'ATTRACTION',
-    }
-    onAddStop(day.id, payload)
-  }
+
 
   return (
     <div className="rounded-2xl border border-slate-200 bg-white p-5">
@@ -105,43 +96,11 @@ export default function DayColumn({
 
       {/* --- Inline add stop form --- */}
       {isAddStopOpen && (
-        <form
-          className="mt-4 space-y-3 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 p-4"
-          onSubmit={handleAddStopSubmit}
-        >
-          <p className="text-xs font-medium text-slate-600 uppercase tracking-wider">
-            Add a stop
-          </p>
-          <input
-            name="googlePlaceId"
-            placeholder="Google Place ID"
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
-            required
-          />
-          <select
-            name="stopType"
-            className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-200"
-            defaultValue="ATTRACTION"
-          >
-            <option value="ATTRACTION">Attraction</option>
-            <option value="RESTAURANT">Restaurant</option>
-            <option value="LODGING">Lodging</option>
-            <option value="TRANSIT">Transit</option>
-          </select>
-          <div className="flex gap-2 pt-1">
-            <Button type="submit" size="sm">
-              Add
-            </Button>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={onToggleAddStop}
-            >
-              Cancel
-            </Button>
-          </div>
-        </form>
+        <AddStopForm
+          dayId={day.id}
+          onAddStop={onAddStop}
+          onCancel={onToggleAddStop}
+        />
       )}
     </div>
   )

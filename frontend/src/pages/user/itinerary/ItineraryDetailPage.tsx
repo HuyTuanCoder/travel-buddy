@@ -1,4 +1,5 @@
 import { useParams, Link } from 'react-router-dom'
+import { APIProvider } from '@vis.gl/react-google-maps'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -74,8 +75,9 @@ export default function ItineraryDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900">
-      <div className="mx-auto max-w-6xl px-6 py-12">
+    <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
+      <main className="min-h-screen bg-slate-50 text-slate-900">
+        <div className="mx-auto max-w-6xl px-6 py-12">
         {/* --- Breadcrumb --- */}
         <Link
           to="/trips"
@@ -174,8 +176,9 @@ export default function ItineraryDetailPage() {
             />
           )}
         </div>
-      </div>
-    </main>
+        </div>
+      </main>
+    </APIProvider>
   )
 }
 

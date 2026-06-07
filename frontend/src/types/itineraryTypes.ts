@@ -47,6 +47,12 @@ export interface TripStopResponse {
   stopType: StopType
   estimatedCost: number | null
   userNotes: string | null
+  // Fields populated by the Location Service
+  locationName?: string
+  address?: string
+  latitude?: number
+  longitude?: number
+  imageUrl?: string
 }
 
 export interface ItineraryDayResponse {

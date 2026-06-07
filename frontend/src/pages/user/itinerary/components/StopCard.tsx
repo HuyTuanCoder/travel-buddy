@@ -45,7 +45,7 @@ export default function StopCard({ stop, onRemove }: StopCardProps) {
         {/* Place ID and type badge */}
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium text-slate-800 truncate">
-            {stop.googlePlaceId}
+            {stop.locationName || `Place: ${stop.googlePlaceId}`}
           </span>
           <Badge
             variant="outline"
