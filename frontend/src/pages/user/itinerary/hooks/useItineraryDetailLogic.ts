@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getItineraryDetail, updateItinerary, deleteItinerary } from '@/services/itinerary/itineraryService'
-import { getMembers, inviteMember, removeMember } from '@/services/itinerary/memberService'
+import { getMembers, inviteMember, removeMember, updateMemberRole, transferOwnership } from '@/services/itinerary/memberService'
 import { addDay, removeDay, addStop, updateStop, removeStop, reorderStops } from '@/services/itinerary/timelineService'
 import type {
   ItineraryDetailResponse,
@@ -211,6 +211,34 @@ export function useItineraryDetailLogic(itineraryId: string) {
     }
   }
 
+  // Update a member's role
+  const handleUpdateMemberRole = async (targetUserId: string, role: string) => {
+    try {
+      await updateMemberRole(itineraryId, targetUserId, role)
+      const memberList = await getMembers(itineraryId)
+      setState((prev) => ({ ...prev, members: memberList }))
+    } catch (err: any) {
+      setState((prev) => ({
+        ...prev,
+        error: err?.message ?? 'Failed to update member role.',
+      }))
+    }
+  }
+
+  // Transfer ownership to another member
+  const handleTransferOwnership = async (targetUserId: string) => {
+    try {
+      await transferOwnership(itineraryId, targetUserId)
+      const memberList = await getMembers(itineraryId)
+      setState((prev) => ({ ...prev, members: memberList }))
+    } catch (err: any) {
+      setState((prev) => ({
+        ...prev,
+        error: err?.message ?? 'Failed to transfer ownership.',
+      }))
+    }
+  }
+
   return {
     // State
     itinerary: state.itinerary,
@@ -237,6 +265,8 @@ export function useItineraryDetailLogic(itineraryId: string) {
     // Member actions
     handleInvite,
     handleRemoveMember,
+    handleUpdateMemberRole,
+    handleTransferOwnership,
 
     // Utilities
     refetch: fetchDetail,
