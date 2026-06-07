@@ -8,7 +8,7 @@ type RegisterState = {
   password: string
 }
 
-export const useRegisterLogic = () => {
+export function useRegisterLogic() {
   const [form, setForm] = useState<RegisterState>({ email: '', password: '' })
   const [error, setError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)

@@ -17,12 +17,12 @@ type HeroSectionProps = {
   stats: Stat[]
 }
 
-const HeroSection = ({
+export default function HeroSection({
   headline,
   subhead,
   highlights,
   stats,
-}: HeroSectionProps) => {
+}: HeroSectionProps) {
   return (
     <section className="relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,_rgba(59,130,246,0.08),_transparent_55%)]" />
@@ -131,4 +131,4 @@ const HeroSection = ({
   )
 }
 
-export default HeroSection
+

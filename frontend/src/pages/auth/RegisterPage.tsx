@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useRegisterLogic } from './hooks/useRegisterLogic'
 
-const RegisterPage = () => {
+export default function RegisterPage() {
   const { form, error, isSubmitting, updateField, handleSubmit } =
     useRegisterLogic()
 
@@ -73,4 +73,4 @@ const RegisterPage = () => {
   )
 }
 
-export default RegisterPage
+

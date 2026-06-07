@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import React, { createContext, useContext, useState } from 'react'
 
 type AuthUser = {
   email: string
@@ -14,7 +14,7 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined)
 
-export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
+export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accessToken, setAccessToken] = useState(
     localStorage.getItem('access_token'),
   )
@@ -38,21 +38,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setUser(null)
   }
 
-  const value = useMemo(
-    () => ({
-      isAuthenticated,
-      user,
-      accessToken,
-      setAuth,
-      clearAuth,
-    }),
-    [accessToken, isAuthenticated, user],
-  )
+  const value = {
+    isAuthenticated,
+    user,
+    accessToken,
+    setAuth,
+    clearAuth,
+  }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export const useAuth = () => {
+export function useAuth() {
   const context = useContext(AuthContext)
   if (!context) {
     throw new Error('useAuth must be used within AuthProvider')

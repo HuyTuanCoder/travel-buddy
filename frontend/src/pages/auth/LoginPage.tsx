@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useLoginLogic } from './hooks/useLoginLogic'
 
-const LoginPage = () => {
+export default function LoginPage() {
   const { form, error, isSubmitting, updateField, handleSubmit } =
     useLoginLogic()
 
@@ -73,4 +73,4 @@ const LoginPage = () => {
   )
 }
 
-export default LoginPage
+

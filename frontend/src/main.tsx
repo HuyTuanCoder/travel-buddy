@@ -8,6 +8,8 @@ import LandingPage from '@/pages/landing/LandingPage.tsx'
 import LoginPage from '@/pages/auth/LoginPage.tsx'
 import RegisterPage from '@/pages/auth/RegisterPage.tsx'
 import UserProfilePage from '@/pages/user/profile/UserProfilePage'
+import ItineraryListPage from '@/pages/user/itinerary/ItineraryListPage'
+import ItineraryDetailPage from '@/pages/user/itinerary/ItineraryDetailPage'
 
 // Route Protection Setup
 import ProtectedRoute from '@/components/ProtectedRoute.tsx'
@@ -32,6 +34,14 @@ const router = createBrowserRouter([
       {
         path: '/profile',
         element: <UserProfilePage />,
+      },
+      {
+        path: '/trips',
+        element: <ItineraryListPage />,
+      },
+      {
+        path: '/trips/:id',
+        element: <ItineraryDetailPage />,
       },
     ],
   },
