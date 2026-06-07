@@ -1,11 +1,17 @@
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import type { TripStopResponse } from '@/types/itineraryTypes'
+import { useState } from 'react'
+import { Draggable } from '@hello-pangea/dnd'
+import { GripVertical, Pencil, Trash2 } from 'lucide-react'
+import type { TripStopResponse, UpdateStopRequest } from '@/types/itineraryTypes'
+import EditStopDialog from './EditStopDialog'
 
 // ==================== Props ====================
 
 interface StopCardProps {
   stop: TripStopResponse
+  index: number
+  onUpdate: (stopId: string, payload: UpdateStopRequest) => void
   onRemove: (stopId: string) => void
 }
 
@@ -20,7 +26,8 @@ const stopTypeStyles: Record<string, string> = {
 
 // ==================== Component ====================
 
-export default function StopCard({ stop, onRemove }: StopCardProps) {
+export default function StopCard({ stop, index, onUpdate, onRemove }: StopCardProps) {
+  const [isEditOpen, setIsEditOpen] = useState(false)
   // Format time for display (HH:mm → "10:30 AM")
   const formatTime = (time: string | null): string | null => {
     if (!time) return null
@@ -34,11 +41,26 @@ export default function StopCard({ stop, onRemove }: StopCardProps) {
   const departure = formatTime(stop.departureTime)
 
   return (
-    <div className="group flex items-start gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all hover:border-slate-200 hover:shadow-sm">
-      {/* Visit order indicator */}
-      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
-        {stop.visitOrder}
-      </div>
+    <Draggable draggableId={stop.id} index={index}>
+      {(provided: any) => (
+        <>
+          <div
+            ref={provided.innerRef}
+            {...provided.draggableProps}
+            className="group flex items-start gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all hover:border-slate-200 hover:shadow-sm"
+          >
+            {/* Drag handle */}
+            <div
+              {...provided.dragHandleProps}
+              className="mt-1 flex cursor-grab items-center justify-center text-slate-400 hover:text-slate-600 active:cursor-grabbing"
+            >
+              <GripVertical size={16} />
+            </div>
+
+            {/* Visit order indicator */}
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-slate-100 text-xs font-semibold text-slate-600">
+              {stop.visitOrder}
+            </div>
 
       {/* Stop details */}
       <div className="flex-1 min-w-0 space-y-1.5">
@@ -77,16 +99,36 @@ export default function StopCard({ stop, onRemove }: StopCardProps) {
         )}
       </div>
 
-      {/* Remove button — visible on hover */}
-      <Button
-        variant="ghost"
-        size="icon"
-        className="h-7 w-7 opacity-0 group-hover:opacity-100 transition-opacity text-red-400 hover:text-red-600"
-        onClick={() => onRemove(stop.id)}
-      >
-        ✕
-      </Button>
+      {/* Action buttons — visible on hover */}
+      <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-slate-400 hover:text-blue-600"
+          onClick={() => setIsEditOpen(true)}
+        >
+          <Pencil size={14} />
+        </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-7 w-7 text-red-400 hover:text-red-600"
+          onClick={() => onRemove(stop.id)}
+        >
+          <Trash2 size={14} />
+        </Button>
+      </div>
     </div>
+
+    <EditStopDialog
+      stop={stop}
+      isOpen={isEditOpen}
+      onClose={() => setIsEditOpen(false)}
+      onSave={onUpdate}
+    />
+    </>
+  )}
+  </Draggable>
   )
 }
 

@@ -1,4 +1,4 @@
-
+import { Droppable } from '@hello-pangea/dnd'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Separator } from '@/components/ui/separator'
@@ -7,6 +7,7 @@ import AddStopForm from './AddStopForm'
 import type {
   ItineraryDayResponse,
   AddStopRequest,
+  UpdateStopRequest,
 } from '@/types/itineraryTypes'
 
 // ==================== Props ====================
@@ -15,6 +16,7 @@ interface DayColumnProps {
   day: ItineraryDayResponse
   onRemoveDay: (dayId: string) => void
   onAddStop: (dayId: string, payload: AddStopRequest) => void
+  onUpdateStop: (stopId: string, payload: UpdateStopRequest) => void
   onRemoveStop: (stopId: string) => void
   isAddStopOpen: boolean
   onToggleAddStop: () => void
@@ -26,6 +28,7 @@ export default function DayColumn({
   day,
   onRemoveDay,
   onAddStop,
+  onUpdateStop,
   onRemoveStop,
   isAddStopOpen,
   onToggleAddStop,
@@ -83,15 +86,26 @@ export default function DayColumn({
           No stops yet. Click "+ Stop" to add one.
         </p>
       ) : (
-        <div className="space-y-3">
-          {day.stops.map((stop) => (
-            <StopCard
-              key={stop.id}
-              stop={stop}
-              onRemove={onRemoveStop}
-            />
-          ))}
-        </div>
+        <Droppable droppableId={day.id}>
+          {(provided: any) => (
+            <div
+              className="space-y-3"
+              ref={provided.innerRef}
+              {...provided.droppableProps}
+            >
+              {day.stops.map((stop, index) => (
+                <StopCard
+                  key={stop.id}
+                  stop={stop}
+                  index={index}
+                  onUpdate={onUpdateStop}
+                  onRemove={onRemoveStop}
+                />
+              ))}
+              {provided.placeholder}
+            </div>
+          )}
+        </Droppable>
       )}
 
       {/* --- Inline add stop form --- */}

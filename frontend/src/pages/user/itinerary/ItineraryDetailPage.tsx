@@ -1,5 +1,7 @@
 import { useParams, Link } from 'react-router-dom'
 import { APIProvider } from '@vis.gl/react-google-maps'
+import { DragDropContext } from '@hello-pangea/dnd'
+import type { DropResult } from '@hello-pangea/dnd'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -34,10 +36,41 @@ export default function ItineraryDetailPage() {
     addStopDayId,
     setAddStopDayId,
     handleAddStop,
+    handleUpdateStop,
     handleRemoveStop,
+    handleReorderStops,
     handleInvite,
     handleRemoveMember,
   } = useItineraryDetailLogic(id!)
+
+  const onDragEnd = (result: DropResult) => {
+    const { source, destination } = result
+    if (!destination) return
+
+    if (
+      source.droppableId === destination.droppableId &&
+      source.index === destination.index
+    ) {
+      return
+    }
+
+    if (source.droppableId !== destination.droppableId) {
+      alert('Moving stops between days is not yet supported.')
+      return
+    }
+
+    if (!itinerary) return
+
+    const day = itinerary.days.find((d) => d.id === source.droppableId)
+    if (!day) return
+
+    const newStops = Array.from(day.stops)
+    const [movedStop] = newStops.splice(source.index, 1)
+    newStops.splice(destination.index, 0, movedStop)
+
+    const stopIds = newStops.map((s) => s.id)
+    handleReorderStops(source.droppableId, { stopIds })
+  }
 
   // --- Loading state ---
   if (isLoading) {
@@ -143,19 +176,22 @@ export default function ItineraryDetailPage() {
         <div className="grid gap-8 lg:grid-cols-[1fr_280px]">
           {/* Left: day timeline */}
           <div className="space-y-5">
-            {itinerary.days.map((day) => (
-              <DayColumn
-                key={day.id}
-                day={day}
-                onRemoveDay={handleRemoveDay}
-                onAddStop={handleAddStop}
-                onRemoveStop={handleRemoveStop}
-                isAddStopOpen={addStopDayId === day.id}
-                onToggleAddStop={() =>
-                  setAddStopDayId(addStopDayId === day.id ? null : day.id)
-                }
-              />
-            ))}
+            <DragDropContext onDragEnd={onDragEnd}>
+              {itinerary.days.map((day) => (
+                <DayColumn
+                  key={day.id}
+                  day={day}
+                  onRemoveDay={handleRemoveDay}
+                  onAddStop={handleAddStop}
+                  onUpdateStop={handleUpdateStop}
+                  onRemoveStop={handleRemoveStop}
+                  isAddStopOpen={addStopDayId === day.id}
+                  onToggleAddStop={() =>
+                    setAddStopDayId(addStopDayId === day.id ? null : day.id)
+                  }
+                />
+              ))}
+            </DragDropContext>
 
             {/* Add day button */}
             <Button
