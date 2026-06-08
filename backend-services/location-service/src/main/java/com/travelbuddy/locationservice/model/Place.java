@@ -28,7 +28,7 @@ public class Place {
   @Column(name = "longitude", nullable = false)
   private Double longitude;
 
-  @Column(name = "photo_reference")
+  @Column(name = "photo_reference", columnDefinition = "TEXT")
   private String photoReference;
 
   @Column(name = "place_types")
