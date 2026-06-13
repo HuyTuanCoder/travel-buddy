@@ -1,4 +1,5 @@
-import { Map, AdvancedMarker, Pin } from '@vis.gl/react-google-maps'
+import { useEffect } from 'react'
+import { Map, AdvancedMarker, Pin, useMap } from '@vis.gl/react-google-maps'
 import type { ItineraryDetailResponse } from '@/types/itineraryTypes'
 
 interface TripMapVisualizerProps {
@@ -17,8 +18,6 @@ export default function TripMapVisualizer({ itinerary }: TripMapVisualizerProps)
         stop.longitude !== null
     )
 
-  // Determine map center
-  // Default to a world-ish view if no stops have coordinates yet
   const defaultCenter =
     stopsWithCoords.length > 0
       ? { lat: stopsWithCoords[0].latitude!, lng: stopsWithCoords[0].longitude! }
@@ -26,8 +25,22 @@ export default function TripMapVisualizer({ itinerary }: TripMapVisualizerProps)
 
   const defaultZoom = stopsWithCoords.length > 0 ? 12 : 3
 
+  const map = useMap()
+
+  useEffect(() => {
+    if (!map || stopsWithCoords.length === 0) return
+
+    const bounds = new window.google.maps.LatLngBounds()
+    stopsWithCoords.forEach((stop) => {
+      bounds.extend({ lat: stop.latitude!, lng: stop.longitude! })
+    })
+
+    // Fit bounds with generous padding so markers aren't at the very edge
+    map.fitBounds(bounds, { top: 60, right: 60, bottom: 60, left: 60 })
+  }, [map, stopsWithCoords])
+
   return (
-    <div className="w-full h-full min-h-[400px] rounded-2xl overflow-hidden border border-slate-200 shadow-sm bg-slate-50 relative">
+    <div className="w-full h-full min-h-[400px] rounded-2xl overflow-hidden border border-slate-200/60 shadow-md ring-1 ring-slate-900/5 bg-slate-50 relative">
       <Map
         mapId="DEMO_MAP_ID" // Required for AdvancedMarker
         defaultZoom={defaultZoom}
