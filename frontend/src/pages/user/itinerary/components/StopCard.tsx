@@ -131,5 +131,3 @@ export default function StopCard({ stop, index, onUpdate, onRemove }: StopCardPr
   </Draggable>
   )
 }
-
-

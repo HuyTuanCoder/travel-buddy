@@ -14,34 +14,40 @@ import ItineraryDetailPage from '@/pages/user/itinerary/ItineraryDetailPage'
 // Route Protection Setup
 import ProtectedRoute from '@/components/ProtectedRoute.tsx'
 import { AuthProvider } from '@/contexts/AuthContext.tsx'
+import RootLayout from '@/components/layout/RootLayout.tsx'
 
 const router = createBrowserRouter([
   {
-    path: '/',
-    element: <LandingPage />,
-  },
-  {
-    path: '/login',
-    element: <LoginPage />,
-  },
-  {
-    path: '/register',
-    element: <RegisterPage />,
-  },
-  {
-    element: <ProtectedRoute />,
+    element: <RootLayout />,
     children: [
       {
-        path: '/profile',
-        element: <UserProfilePage />,
+        path: '/',
+        element: <LandingPage />,
       },
       {
-        path: '/trips',
-        element: <ItineraryListPage />,
+        path: '/login',
+        element: <LoginPage />,
       },
       {
-        path: '/trips/:id',
-        element: <ItineraryDetailPage />,
+        path: '/register',
+        element: <RegisterPage />,
+      },
+      {
+        element: <ProtectedRoute />,
+        children: [
+          {
+            path: '/profile',
+            element: <UserProfilePage />,
+          },
+          {
+            path: '/trips',
+            element: <ItineraryListPage />,
+          },
+          {
+            path: '/trips/:id',
+            element: <ItineraryDetailPage />,
+          },
+        ],
       },
     ],
   },

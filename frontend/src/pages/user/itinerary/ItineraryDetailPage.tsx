@@ -1,4 +1,7 @@
+import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
+import type { PanelImperativeHandle } from "react-resizable-panels"
+import { Users, Map as MapIcon, ChevronLeft, ChevronRight, PlusCircle, Calendar } from 'lucide-react'
 import { APIProvider } from '@vis.gl/react-google-maps'
 import { DragDropContext } from '@hello-pangea/dnd'
 import type { DropResult } from '@hello-pangea/dnd'
@@ -6,10 +9,17 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
+import {
+  ResizableHandle,
+  ResizablePanel,
+  ResizablePanelGroup,
+} from '@/components/ui/resizable'
 import { useItineraryDetailLogic } from './hooks/useItineraryDetailLogic'
 import DayColumn from './components/DayColumn'
+import AddStopForm from './components/AddStopForm'
 import MemberPanel from './components/MemberPanel'
 import TripMapVisualizer from './components/TripMapVisualizer'
+import VerticalSidebar from './components/VerticalSidebar'
 
 // ==================== Status badge styles (same as TripCard) ====================
 
@@ -45,6 +55,24 @@ export default function ItineraryDetailPage() {
     handleUpdateMemberRole,
     handleTransferOwnership,
   } = useItineraryDetailLogic(id!)
+
+  const [activeTab, setActiveTab] = useState<string>('')
+  
+  const [isMembersOpen, setIsMembersOpen] = useState(false)
+  const [isTimelineOpen, setIsTimelineOpen] = useState(true)
+  const [isMapOpen, setIsMapOpen] = useState(true)
+
+  const togglePanel = (panel: 'members' | 'timeline' | 'map') => {
+    if (panel === 'members') setIsMembersOpen(!isMembersOpen)
+    if (panel === 'timeline') setIsTimelineOpen(!isTimelineOpen)
+    if (panel === 'map') setIsMapOpen(!isMapOpen)
+  }
+
+  useEffect(() => {
+    if (itinerary?.days && itinerary.days.length > 0 && !itinerary.days.find(d => d.id === activeTab)) {
+      setActiveTab(itinerary.days[0].id)
+    }
+  }, [itinerary?.days, activeTab])
 
   const onDragEnd = (result: DropResult) => {
     const { source, destination } = result
@@ -113,7 +141,7 @@ export default function ItineraryDetailPage() {
   return (
     <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
       <main className="min-h-screen bg-slate-50 text-slate-900">
-        <div className="mx-auto max-w-6xl px-6 py-12">
+        <div className="mx-auto max-w-[1400px] px-6 py-8">
         {/* --- Breadcrumb --- */}
         <Link
           to="/trips"
@@ -173,58 +201,177 @@ export default function ItineraryDetailPage() {
           </div>
         )}
 
-        <Separator className="mb-8" />
+        <Separator className="mb-6" />
 
-        {/* --- Main content: timeline + map --- */}
-        <div className="grid gap-8 lg:grid-cols-[450px_1fr]">
-          {/* Left: day timeline & members */}
-          <div className="space-y-6">
-            <div className="space-y-5">
-              <DragDropContext onDragEnd={onDragEnd}>
-                {itinerary.days.map((day) => (
-                  <DayColumn
-                    key={day.id}
-                    day={day}
-                    onRemoveDay={handleRemoveDay}
-                    onAddStop={handleAddStop}
-                    onUpdateStop={handleUpdateStop}
-                    onRemoveStop={handleRemoveStop}
-                    isAddStopOpen={addStopDayId === day.id}
-                    onToggleAddStop={() =>
-                      setAddStopDayId(addStopDayId === day.id ? null : day.id)
-                    }
-                  />
-                ))}
-              </DragDropContext>
+        <Separator className="mb-6" />
 
-              {/* Add day button */}
-              <Button
-                variant="outline"
-                className="w-full border-dashed border-slate-300 text-slate-500 hover:text-slate-700 hover:border-slate-400"
-                onClick={() => handleAddDay({ scheduledDate: null })}
-              >
-                + Add day {itinerary.days.length + 1}
-              </Button>
-            </div>
+        {/* --- Main content: Leetcode-style 3-column layout --- */}
+        <div className="h-[calc(100vh-160px)] w-full rounded-xl border border-slate-200 shadow-sm bg-white overflow-hidden flex">
+          
+          {/* GLOBAL LEFT NAV */}
+          <VerticalSidebar
+            position="left"
+            tabs={[
+              {
+                id: 'members',
+                label: 'Members',
+                icon: Users,
+                onClick: () => togglePanel('members'),
+                isActive: isMembersOpen
+              },
+              {
+                id: 'timeline',
+                label: 'Timeline',
+                icon: Calendar,
+                onClick: () => togglePanel('timeline'),
+                isActive: isTimelineOpen
+              },
+              {
+                id: 'map',
+                label: 'Map View',
+                icon: MapIcon,
+                onClick: () => togglePanel('map'),
+                isActive: isMapOpen
+              }
+            ]}
+          />
 
-            {/* Members panel */}
-            {members && (
-              <MemberPanel
-                members={members}
-                onInvite={handleInvite}
-                onRemoveMember={handleRemoveMember}
-                onUpdateRole={handleUpdateMemberRole}
-                onTransferOwnership={handleTransferOwnership}
-              />
+          <ResizablePanelGroup orientation="horizontal" className="flex-1 h-full w-full items-stretch">
+            
+            {/* Left Column: Sidebar (Members) */}
+            {isMembersOpen && (
+              <>
+                <ResizablePanel 
+                  defaultSize={20} 
+                  minSize={15} 
+                  className="bg-slate-50/50 flex flex-col"
+                >
+                  <div className="h-10 flex items-center justify-between px-3 border-b border-slate-200 bg-white shrink-0">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                      <Users size={14} />
+                      Members
+                    </div>
+                    <button onClick={() => togglePanel('members')} className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition-colors">
+                      <ChevronLeft size={16} />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-y-auto hide-scrollbar p-4 space-y-6">
+                    {members && (
+                      <MemberPanel
+                        members={members}
+                        onInvite={handleInvite}
+                        onRemoveMember={handleRemoveMember}
+                        onUpdateRole={handleUpdateMemberRole}
+                        onTransferOwnership={handleTransferOwnership}
+                      />
+                    )}
+                  </div>
+                </ResizablePanel>
+                {(isTimelineOpen || isMapOpen) && <ResizableHandle withHandle />}
+              </>
             )}
-          </div>
 
-          {/* Right: sticky map visualizer */}
-          <div className="hidden lg:block relative">
-            <div className="sticky top-6 h-[calc(100vh-6rem)]">
-              <TripMapVisualizer itinerary={itinerary} />
-            </div>
-          </div>
+            {/* Middle Column: Day Timeline */}
+            {isTimelineOpen && (
+              <>
+                <ResizablePanel 
+                  defaultSize={isMapOpen ? 50 : 100} 
+                  minSize={30} 
+                  className="flex flex-col bg-white h-full relative z-10"
+                >
+                  {/* Custom Tab Navigation */}
+                  <div className="h-10 flex w-full items-center justify-between border-b border-slate-200 px-3 shrink-0 bg-slate-50/80">
+                    <div className="flex items-center overflow-x-auto hide-scrollbar gap-2">
+                      {itinerary.days.map((day, idx) => (
+                        <button
+                          key={day.id}
+                          onClick={() => setActiveTab(day.id)}
+                          className={`pb-1 font-medium text-sm transition-colors relative whitespace-nowrap shrink-0 px-2 mt-1 ${
+                            activeTab === day.id ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
+                          }`}
+                        >
+                          Day {idx + 1}
+                          {activeTab === day.id && (
+                            <span className="absolute -bottom-2 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full" />
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                    
+                    {/* Actions: Add Day & Collapse */}
+                    <div className="flex items-center gap-2 shrink-0">
+                      <button
+                        onClick={() => handleAddDay({ scheduledDate: null })}
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                      >
+                        + Add Day
+                      </button>
+                      <button onClick={() => togglePanel('timeline')} className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition-colors">
+                        <ChevronLeft size={16} />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 w-full overflow-y-auto hide-scrollbar p-6 bg-slate-50/30">
+                    <DragDropContext onDragEnd={onDragEnd}>
+                      {itinerary.days
+                        .filter((day) => day.id === activeTab)
+                        .map((day) => (
+                          <div key={day.id} className="animate-in fade-in slide-in-from-bottom-2 duration-300 w-full">
+                            <DayColumn
+                              day={day}
+                              onRemoveDay={handleRemoveDay}
+                              onAddStop={handleAddStop}
+                              onUpdateStop={handleUpdateStop}
+                              onRemoveStop={handleRemoveStop}
+                              isAddStopOpen={addStopDayId === day.id}
+                              onToggleAddStop={() =>
+                                setAddStopDayId(addStopDayId === day.id ? null : day.id)
+                              }
+                            />
+                          </div>
+                        ))}
+                    </DragDropContext>
+                  </div>
+                </ResizablePanel>
+                {isMapOpen && <ResizableHandle withHandle />}
+              </>
+            )}
+
+            {/* Right Column: Sticky Map */}
+            {isMapOpen && (
+              <ResizablePanel 
+                defaultSize={30} 
+                minSize={25} 
+                className="flex flex-col relative h-full bg-slate-100"
+              >
+                <div className="h-10 flex items-center justify-between px-3 border-b border-slate-200 bg-white shrink-0 z-10">
+                  <button onClick={() => togglePanel('map')} className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition-colors">
+                    <ChevronRight size={16} />
+                  </button>
+                  <div className="flex flex-1 items-center justify-end gap-1 ml-4">
+                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800">
+                      Map View
+                      <MapIcon size={12} />
+                    </div>
+                  </div>
+                </div>
+                <div className="flex-1 relative overflow-y-auto bg-white">
+                  <TripMapVisualizer itinerary={itinerary} />
+                </div>
+              </ResizablePanel>
+            )}
+
+            {!isMembersOpen && !isTimelineOpen && !isMapOpen && (
+              <div className="flex-1 h-full bg-slate-50 flex items-center justify-center">
+                <div className="text-center">
+                  <MapIcon size={48} className="text-slate-300 mx-auto mb-4" />
+                  <h3 className="text-slate-500 font-medium">No panels open</h3>
+                  <p className="text-slate-400 text-sm mt-1">Select a tab from the left menu to view content.</p>
+                </div>
+              </div>
+            )}
+          </ResizablePanelGroup>
         </div>
         </div>
       </main>

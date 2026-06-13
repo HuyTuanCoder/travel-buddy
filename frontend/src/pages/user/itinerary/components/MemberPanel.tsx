@@ -41,7 +41,7 @@ export default function MemberPanel({ members, onInvite, onRemoveMember, onUpdat
   }
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-5">
+    <div className="rounded-2xl border border-slate-200 bg-white p-5 space-y-5 overflow-x-hidden">
       <h3 className="text-sm font-semibold text-slate-700 uppercase tracking-wider">
         Members
       </h3>
@@ -51,7 +51,7 @@ export default function MemberPanel({ members, onInvite, onRemoveMember, onUpdat
         {members.members.map((member) => (
           <div
             key={member.userId}
-            className="group flex items-center justify-between gap-2"
+            className="group flex flex-wrap items-center justify-between gap-2"
           >
             <div className="flex items-center gap-2 min-w-0">
               {/* Avatar placeholder — will integrate with user service later */}
@@ -62,7 +62,7 @@ export default function MemberPanel({ members, onInvite, onRemoveMember, onUpdat
                 {member.userId}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               {member.role !== 'OWNER' ? (
                 <select
                   value={member.role}
@@ -171,5 +171,3 @@ export default function MemberPanel({ members, onInvite, onRemoveMember, onUpdat
     </div>
   )
 }
-
-

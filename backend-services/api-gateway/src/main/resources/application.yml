@@ -36,4 +36,6 @@ server:
   port: 8000
 
 jwt:
-  secret: ${JWT_SECRET}
+  secret: ${JWT_SECRET}logging
+  pattern:
+    console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - [%X{correlationId}] - %msg%n'

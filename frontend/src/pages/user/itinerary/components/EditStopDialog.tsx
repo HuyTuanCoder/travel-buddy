@@ -22,6 +22,7 @@ export default function EditStopDialog({
   onClose,
   onSave,
 }: EditStopDialogProps) {
+  const [stopType, setStopType] = useState<string>(stop.stopType || 'ATTRACTION')
   const [arrivalTime, setArrivalTime] = useState(stop.arrivalTime || '')
   const [departureTime, setDepartureTime] = useState(stop.departureTime || '')
   const [estimatedCost, setEstimatedCost] = useState<string>(
@@ -31,6 +32,7 @@ export default function EditStopDialog({
 
   useEffect(() => {
     if (isOpen) {
+      setStopType(stop.stopType || 'ATTRACTION')
       setArrivalTime(stop.arrivalTime || '')
       setDepartureTime(stop.departureTime || '')
       setEstimatedCost(stop.estimatedCost !== null ? String(stop.estimatedCost) : '')
@@ -45,6 +47,7 @@ export default function EditStopDialog({
     const costParsed = estimatedCost ? parseFloat(estimatedCost) : null
 
     onSave(stop.id, {
+      stopType: stopType as any,
       arrivalTime: arrivalTime || null,
       departureTime: departureTime || null,
       estimatedCost: costParsed !== null && !isNaN(costParsed) ? costParsed : null,
@@ -62,6 +65,20 @@ export default function EditStopDialog({
         </DialogHeader>
         
         <form onSubmit={handleSubmit} className="space-y-4 py-4">
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-700">Stop Type</label>
+            <select
+              value={stopType}
+              onChange={(e) => setStopType(e.target.value)}
+              className="w-full rounded-md border border-slate-200 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              <option value="ATTRACTION">Attraction</option>
+              <option value="RESTAURANT">Restaurant</option>
+              <option value="LODGING">Lodging</option>
+              <option value="TRANSIT">Transit</option>
+            </select>
+          </div>
+
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700">Arrival Time</label>
