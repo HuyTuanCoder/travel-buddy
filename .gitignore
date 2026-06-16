@@ -11,3 +11,6 @@
 
 # Environment
 .env*
+
+# Other
+implementation_plan.md

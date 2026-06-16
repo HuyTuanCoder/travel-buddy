@@ -1,0 +1,8 @@
+.venv
+
+# Python runtime
+__pycache__/
+*.py[cod]1
+
+# Secrets
+.env
