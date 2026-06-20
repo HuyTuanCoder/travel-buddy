@@ -293,7 +293,7 @@ services:
     depends_on:
       - api-gateway
 
-  # Redis: High-speed cache for Pub/Sub (SSE Streaming) & Celery Broker
+  # Redis: High-speed cache for Pub/Sub (SSE Streaming)
   redis:
     image: redis:7-alpine
     container_name: travel-buddy-redis
@@ -301,6 +301,19 @@ services:
       - "6379:6379"
     volumes:
       - redis-data:/data
+    networks:
+      - travel-buddy-network
+
+  # RabbitMQ: Enterprise Message Broker for Celery
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: travel-buddy-rabbitmq
+    ports:
+      - "5672:5672" # AMQP Protocol Port
+      - "15672:15672" # Management UI Port
+    environment:
+      RABBITMQ_DEFAULT_USER: enterprise_user
+      RABBITMQ_DEFAULT_PASS: enterprise_password
     networks:
       - travel-buddy-network
 
@@ -362,14 +375,38 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://enterprise_user:enterprise_password@rabbitmq:5672//
       - QDRANT_URL=http://qdrant:6333
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
-      # We dynamically point the Python Tool to the new Java gRPC port!
       - ITINERARY_GRPC_URL=itinerary-service:${ITINERARY_GRPC_PORT}
     networks:
       - travel-buddy-network
     depends_on:
       - postgres
       - redis
+      - rabbitmq
       - qdrant
       - itinerary-service
+
+  # AI Agent Celery Worker
+  # Processes long-running LangGraph jobs from the RabbitMQ queue
+  ai-agent-celery:
+    image: travel-buddy/ai-agent:latest
+    container_name: travel-buddy-ai-celery
+    build:
+      context: ./ai-agent-fastapi
+      dockerfile: Dockerfile
+    command: ["celery", "-A", "src.workers.setup", "worker", "--loglevel=info"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://enterprise_user:enterprise_password@rabbitmq:5672//
+      - QDRANT_URL=http://qdrant:6333
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - ITINERARY_GRPC_URL=itinerary-service:${ITINERARY_GRPC_PORT}
+    networks:
+      - travel-buddy-network
+    depends_on:
+      - rabbitmq
+      - postgres
+      - redis

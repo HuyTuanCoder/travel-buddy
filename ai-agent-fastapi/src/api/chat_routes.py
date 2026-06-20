@@ -1,9 +1,16 @@
-from fastapi import APIRouter
+import json
+import asyncio
+import os
+from typing import Optional
+from fastapi import APIRouter, Header, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+import redis.asyncio as redis
 
-from src.agent.graph import build_graph
-from src.core.database import DATABASE_URL
+# We import the celery tasks from the modular workers directory
+from src.workers.tasks import process_chat_message, approve_tool_call
+
+REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
 router = APIRouter()
 
@@ -11,21 +18,72 @@ class ChatRequest(BaseModel):
     trip_id: str
     message: str
 
-@router.post("/chat")
-async def chat_endpoint(request: ChatRequest):
-    async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
-        # compile graph with checkpointer to save state
-        app_graph = build_graph(checkpointer)
+class ApproveRequest(BaseModel):
+    trip_id: str
 
-        # create the input for the model
-        inputs = {"messages": [("user", request.message)]}
+@router.post("/chat", status_code=202)
+async def chat_endpoint(
+    request: ChatRequest,
+    x_user_id: Optional[str] = Header(None),
+    x_correlation_id: Optional[str] = Header(None)
+):
+    """
+    Offloads the chat request to RabbitMQ via Celery and returns immediately.
+    We leverage the Spring API Gateway injected headers for distributed tracing/auth.
+    """
+    # .delay() pushes this to RabbitMQ instantly
+    process_chat_message.delay(
+        trip_id=request.trip_id,
+        message=request.message,
+        user_id=x_user_id or "anonymous",
+        correlation_id=x_correlation_id or "none"
+    )
+    return {"status": "accepted", "message": "Task queued for processing."}
 
-        # tell langgraph which memory row to pull from postgres
-        config = {"configurable": {"thread_id": request.trip_id}}
+@router.post("/chat/approve", status_code=202)
+async def approve_endpoint(
+    request: ApproveRequest,
+    x_user_id: Optional[str] = Header(None),
+    x_correlation_id: Optional[str] = Header(None)
+):
+    """
+    Resumes a paused LangGraph execution by offloading the task to RabbitMQ.
+    """
+    approve_tool_call.delay(
+        trip_id=request.trip_id,
+        user_id=x_user_id or "anonymous",
+        correlation_id=x_correlation_id or "none"
+    )
+    return {"status": "accepted", "message": "Approval task queued for processing."}
 
-        # run graph asynchronously, because of db pull
-        final_state = await app_graph.ainvoke(inputs, config=config)
-
-        ai_response = final_state["messages"][-1].content
-
-    return {"reply": ai_response}
+@router.get("/chat/{trip_id}/stream")
+async def stream_chat(trip_id: str, request: Request):
+    """
+    Server-Sent Events (SSE) endpoint to stream real-time updates from Redis Pub/Sub.
+    Because this is standard HTTP GET, Spring Cloud Gateway proxies it natively.
+    """
+    async def event_generator():
+        redis_client = redis.from_url(REDIS_URL)
+        pubsub = redis_client.pubsub()
+        await pubsub.subscribe(f"stream:{trip_id}")
+        
+        try:
+            while True:
+                # Disconnect if client dropped connection (e.g. closed browser)
+                if await request.is_disconnected():
+                    break
+                
+                # Fetch message from redis
+                message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
+                if message is not None:
+                    # Message is formatted as bytes, need to decode
+                    data = message["data"].decode("utf-8")
+                    # Format strictly as SSE: "data: {json}\n\n"
+                    yield f"data: {data}\n\n"
+                    
+                await asyncio.sleep(0.1) # Small sleep to prevent CPU spin
+        finally:
+            await pubsub.unsubscribe(f"stream:{trip_id}")
+            await redis_client.close()
+            
+    return StreamingResponse(event_generator(), media_type="text/event-stream")

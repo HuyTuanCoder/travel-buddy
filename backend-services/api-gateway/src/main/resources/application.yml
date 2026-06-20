@@ -31,6 +31,10 @@ spring:
               uri: http://notification-service:8006
               predicates:
                 - Path=/notifications/**
+            - id: ai-agent-service
+              uri: http://ai-agent-fastapi:8007
+              predicates:
+                - Path=/ai/**
 
 server:
   port: 8000

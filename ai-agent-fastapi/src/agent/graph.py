@@ -45,4 +45,4 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     # when invoke the model => it create blank dict on server ram then delete after run
     # we inhject a postgres saver into graph compiler so it knows the last state
     # of user conversation, if not it create a blank one, then upsert to postgres
-    return builder.compile(checkpointer=checkpointer)
+    return builder.compile(checkpointer=checkpointer, interrupt_before=["tools"])
