@@ -1,99 +1,130 @@
 import os
 import grpc
-import httpx
-from sqlalchemy import text
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
-
-# Import database engine
-from src.core.database import engine
-
-# Import the auto-generated gRPC stubs!
 from src.generated import itinerary_pb2
 from src.generated import itinerary_pb2_grpc
 
-# 1. The Pydantic Contract
-class AddStopArgs(BaseModel):
-    trip_id: str = Field(description="The UUID of the trip")
-    day_index: int = Field(description="The zero-indexed day to add the stop to (e.g. 0 for Day 1)")
-    stop_name: str = Field(description="The name of the location or stop to add")
+# 1. Pydantic Contracts
 
-# 2. The Tool Binding
-@tool(args_schema=AddStopArgs)
-async def add_stop_to_day(trip_id: str, day_index: int, stop_name: str) -> str:
+class AddStopArgs(BaseModel):
+    trip_id: str = Field(description="The UUID of the itinerary/trip")
+    day_number: int = Field(description="The 1-indexed day number to add the stop to (e.g. 1 for Day 1)")
+    google_place_id: str = Field(description="The Google Place ID of the location to add. For testing without a real place ID, use 'ChIJiQBp3E9u5kcRbgWUKqQjY4w'")
+    stop_type: str = Field(description="The category of the stop. Allowed values: ATTRACTION, RESTAURANT, LODGING, TRANSIT, UNKNOWN")
+    user_notes: str = Field(default="", description="Optional notes or context about this stop for the user")
+    arrival_time: str = Field(default="", description="Optional planned arrival time in HH:mm format")
+    departure_time: str = Field(default="", description="Optional planned departure time in HH:mm format")
+    estimated_cost: str = Field(default="", description="Optional estimated cost as a decimal string")
+
+class RemoveStopArgs(BaseModel):
+    stop_id: str = Field(description="The UUID of the stop to remove")
+
+class UpdateStopArgs(BaseModel):
+    stop_id: str = Field(description="The UUID of the stop to update")
+    stop_type: str = Field(default="UNKNOWN", description="The category of the stop. Allowed values: ATTRACTION, RESTAURANT, LODGING, TRANSIT, UNKNOWN")
+    user_notes: str = Field(default="", description="Optional notes or context about this stop for the user")
+    arrival_time: str = Field(default="", description="Optional planned arrival time in HH:mm format")
+    departure_time: str = Field(default="", description="Optional planned departure time in HH:mm format")
+    estimated_cost: str = Field(default="", description="Optional estimated cost as a decimal string")
+
+class MoveStopArgs(BaseModel):
+    trip_id: str = Field(description="The UUID of the itinerary/trip")
+    stop_id: str = Field(description="The UUID of the stop to move")
+    target_day_number: int = Field(description="The 1-indexed day number to move the stop to (e.g. 2 for Day 2)")
+
+# Helper to map string stop_type to enum
+def map_stop_type(stop_type_str: str) -> int:
+    stop_type_upper = stop_type_str.upper()
+    if hasattr(itinerary_pb2, stop_type_upper):
+        return getattr(itinerary_pb2, stop_type_upper)
+    return itinerary_pb2.UNKNOWN
+
+def get_grpc_url() -> str:
+    # Use internal docker compose hostname
+    return os.getenv("ITINERARY_GRPC_URL", "itinerary-service:9090")
+
+# 2. Tool Bindings
+
+@tool("add_stop", args_schema=AddStopArgs)
+async def add_stop(trip_id: str, day_number: int, google_place_id: str, stop_type: str, user_notes: str = "", arrival_time: str = "", departure_time: str = "", estimated_cost: str = "") -> str:
     """
     Call this tool when the user explicitly asks to add a new location or stop to their itinerary.
-    Do NOT call this tool if they are just asking for recommendations.
     """
-    print(f"[Agent Tool] Adding '{stop_name}' to Trip {trip_id} (Day {day_index})")
-    
-    # 1. Resolve day_id from the database
-    day_id = None
     try:
-        async with engine.begin() as conn:
-            # Assuming Java day_number is 1-indexed, we query for day_index + 1
-            result = await conn.execute(
-                text("SELECT id FROM itinerary.itinerary_day WHERE itinerary_id = CAST(:trip_id AS UUID) AND day_number = :day_number"),
-                {"trip_id": trip_id, "day_number": day_index + 1}
-            )
-            row = result.fetchone()
-            if not row:
-                return f"Error: Could not find Day {day_index + 1} for Trip {trip_id} in the database."
-            day_id = str(row[0])
-    except Exception as e:
-        return f"Error querying database for day_id: {str(e)}"
-
-    # 2. Resolve Google Place ID using Google Maps API
-    google_place_id = None
-    api_key = os.getenv("GOOGLE_MAPS_API_KEY")
-    if not api_key:
-        return "Error: GOOGLE_MAPS_API_KEY is not configured in the environment."
-        
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(
-                "https://maps.googleapis.com/maps/api/place/findplacefromtext/json",
-                params={
-                    "input": stop_name,
-                    "inputtype": "textquery",
-                    "fields": "place_id,name",
-                    "key": api_key
-                }
-            )
-            data = response.json()
-            if data.get("status") == "OK" and len(data.get("candidates", [])) > 0:
-                google_place_id = data["candidates"][0]["place_id"]
-            else:
-                return f"Error: Could not find a Google Place ID for '{stop_name}'."
-    except Exception as e:
-        return f"Error querying Google Places API: {str(e)}"
-
-    # 3. The Enterprise gRPC Execution!
-    grpc_url = os.getenv("ITINERARY_GRPC_URL", "localhost:9091")
-    print(f"Opening async gRPC channel to {grpc_url} with Place ID: {google_place_id} and Day ID: {day_id}")
-    
-    try:
-        # Create an async gRPC channel to the Java microservice
-        async with grpc.aio.insecure_channel(grpc_url) as channel:
-            # Instantiate the generated stub
+        async with grpc.aio.insecure_channel(get_grpc_url()) as channel:
             stub = itinerary_pb2_grpc.ItineraryGrpcServiceStub(channel)
-            
-            # Build the strict Protobuf Request
             request = itinerary_pb2.AddStopGrpcRequest(
-                day_id=day_id,
-                user_id="test-user-123", # Authentication injection to be handled centrally
+                trip_id=trip_id,
+                day_number=day_number,
+                user_id="test-user-123", # Authentication injected centrally later
                 google_place_id=google_place_id,
-                stop_type=itinerary_pb2.ATTRACTION,
-                user_notes=f"Added by AI Assistant: {stop_name}"
+                stop_type=map_stop_type(stop_type),
+                user_notes=user_notes,
+                arrival_time=arrival_time,
+                departure_time=departure_time,
+                estimated_cost=estimated_cost
             )
-            
-            # Execute the gRPC call!
             response = await stub.AddStop(request)
-            
-            print(f"gRPC Success! Created Stop UUID: {response.id}")
-            return f"Successfully added {stop_name} to day {day_index + 1}. The backend returned Stop ID: {response.id}"
-            
+            return f"Successfully added stop. Backend returned Stop ID: {response.id}, Order: {response.visit_order}"
     except grpc.aio.AioRpcError as e:
-        error_msg = f"gRPC call failed with status {e.code()}: {e.details()}"
-        print(f"Error: {error_msg}")
-        return error_msg
+        return f"gRPC Error {e.code()}: {e.details()}"
+
+@tool("remove_stop", args_schema=RemoveStopArgs)
+async def remove_stop(stop_id: str) -> str:
+    """
+    Call this tool when the user explicitly asks to remove or delete an existing stop from their itinerary.
+    """
+    try:
+        async with grpc.aio.insecure_channel(get_grpc_url()) as channel:
+            stub = itinerary_pb2_grpc.ItineraryGrpcServiceStub(channel)
+            request = itinerary_pb2.RemoveStopGrpcRequest(
+                stop_id=stop_id,
+                user_id="test-user-123"
+            )
+            await stub.RemoveStop(request)
+            return f"Successfully removed stop {stop_id}."
+    except grpc.aio.AioRpcError as e:
+        return f"gRPC Error {e.code()}: {e.details()}"
+
+@tool("update_stop", args_schema=UpdateStopArgs)
+async def update_stop(stop_id: str, stop_type: str = "UNKNOWN", user_notes: str = "", arrival_time: str = "", departure_time: str = "", estimated_cost: str = "") -> str:
+    """
+    Call this tool when the user asks to update the metadata (like times, notes, or cost) of an existing stop.
+    Do NOT use this tool to move a stop to another day.
+    """
+    try:
+        async with grpc.aio.insecure_channel(get_grpc_url()) as channel:
+            stub = itinerary_pb2_grpc.ItineraryGrpcServiceStub(channel)
+            request = itinerary_pb2.UpdateStopGrpcRequest(
+                stop_id=stop_id,
+                user_id="test-user-123",
+                stop_type=map_stop_type(stop_type),
+                user_notes=user_notes,
+                arrival_time=arrival_time,
+                departure_time=departure_time,
+                estimated_cost=estimated_cost
+            )
+            response = await stub.UpdateStop(request)
+            return f"Successfully updated stop {response.id}."
+    except grpc.aio.AioRpcError as e:
+        return f"gRPC Error {e.code()}: {e.details()}"
+
+@tool("move_stop_between_days", args_schema=MoveStopArgs)
+async def move_stop_between_days(trip_id: str, stop_id: str, target_day_number: int) -> str:
+    """
+    Call this tool when the user asks to move an existing stop from one day to a different day in the itinerary.
+    """
+    try:
+        async with grpc.aio.insecure_channel(get_grpc_url()) as channel:
+            stub = itinerary_pb2_grpc.ItineraryGrpcServiceStub(channel)
+            request = itinerary_pb2.MoveStopGrpcRequest(
+                stop_id=stop_id,
+                trip_id=trip_id,
+                target_day_number=target_day_number,
+                user_id="test-user-123"
+            )
+            response = await stub.MoveStop(request)
+            return f"Successfully moved stop to Day {target_day_number}. Backend returned new Stop ID: {response.id}, Order: {response.visit_order}"
+    except grpc.aio.AioRpcError as e:
+        return f"gRPC Error {e.code()}: {e.details()}"

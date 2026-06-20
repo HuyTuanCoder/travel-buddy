@@ -184,6 +184,55 @@ public class TimelineService {
     log.info("[removeStop] <<< Output: stop {} deleted", stopId);
   }
 
+  // ==================== POST /itineraries/stops/{stopId}/move ====================
+
+  @Transactional
+  public TripStopResponse moveStop(UUID stopId, UUID targetDayId, String userId) {
+    log.info("[moveStop] >>> Input: stopId={}, targetDayId={}, userId={}", stopId, targetDayId, userId);
+
+    TripStop oldStop = stopRepository.findById(stopId)
+        .orElseThrow(() -> new ItineraryNotFoundException("Stop not found: " + stopId));
+
+    ItineraryDay targetDay = dayRepository.findById(targetDayId)
+        .orElseThrow(() -> new ItineraryNotFoundException("Target Day not found: " + targetDayId));
+
+    UUID itineraryId = oldStop.getItineraryDay().getItinerary().getId();
+    UUID targetItineraryId = targetDay.getItinerary().getId();
+
+    if (!itineraryId.equals(targetItineraryId)) {
+        throw new InvalidRequestException("Cannot move stops between different itineraries");
+    }
+    
+    accessGuard.verifyEditPermission(itineraryId, userId);
+
+    // Calculate visit order for new day
+    int nextVisitOrder = stopRepository.findMaxVisitOrderByDayId(targetDayId)
+        .map(max -> max + 1)
+        .orElse(1);
+
+    // Create a new stop instance because itineraryDay is not updatable
+    TripStop newStop = new TripStop();
+    newStop.setItineraryDay(targetDay);
+    newStop.setGooglePlaceId(oldStop.getGooglePlaceId());
+    newStop.setStopType(oldStop.getStopType());
+    newStop.setVisitOrder(nextVisitOrder);
+    newStop.setArrivalTime(oldStop.getArrivalTime());
+    newStop.setDepartureTime(oldStop.getDepartureTime());
+    newStop.setEstimatedCost(oldStop.getEstimatedCost());
+    newStop.setUserNotes(oldStop.getUserNotes());
+
+    // Save the new stop and delete the old one transactionally
+    TripStop savedStop = stopRepository.save(newStop);
+    stopRepository.delete(oldStop);
+
+    Map<String, PlaceInfo> locationMap = savedStop.getGooglePlaceId() != null ? 
+        locationGrpcClient.fetchPlaces(List.of(savedStop.getGooglePlaceId())) : Collections.emptyMap();
+    TripStopResponse response = mapper.toStopResponse(savedStop, locationMap);
+
+    log.info("[moveStop] <<< Output: {}", response);
+    return response;
+  }
+
   // ==================== PUT /itineraries/days/{dayId}/stops/reorder ====================
 
   @Transactional

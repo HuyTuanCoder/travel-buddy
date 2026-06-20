@@ -1,10 +1,10 @@
 from langchain_google_genai import ChatGoogleGenerativeAI
 from src.agent.state import AgentState
-from src.agent.tools.itinerary import add_stop_to_day
+from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
 
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest")
 
-tools = [add_stop_to_day]
+tools = [add_stop, remove_stop, update_stop, move_stop_between_days]
 llm_with_tools = llm.bind_tools(tools)
 
 def call_gemini(state: AgentState):

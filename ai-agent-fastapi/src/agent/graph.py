@@ -4,7 +4,8 @@ from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 
 from src.agent.state import AgentState
 from src.agent.nodes.gemini import call_gemini
-from src.agent.tools.itinerary import add_stop_to_day
+from src.agent.nodes.validator import validate_tool_call
+from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
 
 # custom router to check if llm try to call a tool
 def route_from_agent(state: AgentState):
@@ -25,7 +26,7 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
 
     # add our nodes
     builder.add_node("agent", call_gemini)
-    builder.add_node("tools", ToolNode([add_stop_to_day]))
+    builder.add_node("tools", ToolNode([add_stop, remove_stop, update_stop, move_stop_between_days]))
     builder.add_node("validator", validate_tool_call)
 
     # draw the entry edge
