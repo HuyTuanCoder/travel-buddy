@@ -15,6 +15,9 @@ volumes:
   postgres-data:
     driver: local
     name: travel-buddy-postgres-data
+  redis-data:
+  qdrant-data:
+  langfuse-data:
 
 # SERVICES CONFIGURATION
 services:
@@ -288,3 +291,58 @@ services:
     # Frontend waits for API Gateway to be healthy
     depends_on:
       - api-gateway
+
+  # Redis: High-speed cache for Pub/Sub (SSE Streaming) & Celery Broker
+  redis:
+    image: redis:7-alpine
+    container_name: travel-buddy-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - travel-buddy-network
+
+  # Qdrant: Vector Database for RAG & Semantic Travel Memories
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: travel-buddy-qdrant
+    ports:
+      - "6333:6333" # HTTP
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - travel-buddy-network
+
+  # Langfuse DB: Dedicated Postgres for storing raw LLM traces
+  langfuse-db:
+    image: postgres:15
+    container_name: travel-buddy-langfuse-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=langfuse
+    ports:
+      - "5433:5432" # Exposed on 5433 to prevent clash with main Postgres
+    volumes:
+      - langfuse-data:/var/lib/postgresql/data
+    networks:
+      - travel-buddy-network
+
+  # Langfuse Server: The UI Dashboard for LLMOps and prompt tracking
+  langfuse:
+    image: langfuse/langfuse:latest
+    container_name: travel-buddy-langfuse
+    depends_on:
+      - langfuse-db
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@langfuse-db:5432/langfuse
+      - NEXTAUTH_SECRET=enterprise_secret_key
+      - SALT=enterprise_salt
+      - NEXTAUTH_URL=http://localhost:3000
+      - TELEMETRY_ENABLED=false
+    networks:
+      - travel-buddy-network
