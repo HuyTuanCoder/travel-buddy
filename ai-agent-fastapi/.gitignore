@@ -6,3 +6,5 @@ __pycache__/
 
 # Secrets
 .env
+
+src/generated/

@@ -187,7 +187,8 @@ services:
       SPRING_DATASOURCE_USERNAME: ${ITINERARY_DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${ITINERARY_DB_PASSWORD}
       SERVER_PORT: 8004
-      GRPC_CLIENT_LOCATION_SERVICE_ADDRESS: "static://location-service:9090"
+      GRPC_SERVER_PORT: ${ITINERARY_GRPC_PORT}
+      GRPC_CLIENT_LOCATION_SERVICE_ADDRESS: "static://location-service:${LOCATION_GRPC_PORT}"
       GRPC_CLIENT_LOCATION_SERVICE_NEGOTIATION_TYPE: "PLAINTEXT"
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
@@ -214,7 +215,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${LOCATION_DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${LOCATION_DB_PASSWORD}
       SERVER_PORT: 8005
-      GRPC_SERVER_PORT: 9090
+      GRPC_SERVER_PORT: ${LOCATION_GRPC_PORT}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
@@ -346,3 +347,29 @@ services:
       - TELEMETRY_ENABLED=false
     networks:
       - travel-buddy-network
+
+  # AI Agent Service (FastAPI)
+  # Orchestrates LangGraph tasks and LLM requests
+  # Port: 8007 (Internal / Host)
+  ai-agent-fastapi:
+    image: travel-buddy/ai-agent:latest
+    container_name: ai-agent-fastapi
+    build:
+      context: ./ai-agent-fastapi
+      dockerfile: Dockerfile
+    ports:
+      - "${AI_AGENT_PORT}:${AI_AGENT_PORT}"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - REDIS_URL=redis://redis:6379/0
+      - QDRANT_URL=http://qdrant:6333
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      # We dynamically point the Python Tool to the new Java gRPC port!
+      - ITINERARY_GRPC_URL=itinerary-service:${ITINERARY_GRPC_PORT}
+    networks:
+      - travel-buddy-network
+    depends_on:
+      - postgres
+      - redis
+      - qdrant
+      - itinerary-service
