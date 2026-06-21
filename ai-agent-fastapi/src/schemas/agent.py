@@ -9,11 +9,17 @@ class AgentState(TypedDict):
     messages: Annotated[list[AnyMessage], add_messages]
     
     # 2. Agentic Planning
-    # The Planner Node will write a step-by-step string here (e.g., "1. Find hotel 2. Book flight").
-    # The main Agent will read this so it doesn't get lost.
-    plan: str
+    # The Planner Node generates a strict checklist of actions.
+    plan: list[str]
     
     # 3. Reflection / Validation
     # If the Pydantic Validator catches bad JSON, it will drop the error string here.
-    # The Gemini node will read this on the next loop and fix its mistake.
     validation_error: str
+    
+    # 4. Critic Feedback (Linear CoT)
+    # The Critic Node evaluates the itinerary. If it fails, feedback is placed here.
+    critic_feedback: str
+    
+    # 5. Failsafe Retry Count
+    # Prevents infinite loops between Agent and Critic.
+    retry_count: int
