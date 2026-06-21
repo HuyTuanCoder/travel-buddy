@@ -2,6 +2,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage
 from src.schemas.agent import AgentState
 from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
+from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
 import logging
 import os
 
@@ -9,7 +10,10 @@ logger = logging.getLogger(__name__)
 
 llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro-latest", api_key=os.getenv("GEMINI_API_KEY"))
 
-tools = [add_stop, remove_stop, update_stop, move_stop_between_days]
+tools = [
+    add_stop, remove_stop, update_stop, move_stop_between_days,
+    search_web, read_webpage, find_and_register_place
+]
 llm_with_tools = llm.bind_tools(tools)
 
 def call_gemini(state: AgentState):

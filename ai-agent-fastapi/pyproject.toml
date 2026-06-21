@@ -30,6 +30,9 @@ pika = "^1.4.1"
 spacy = "^3.7.4"
 sentence-transformers = "^3.0.1"
 qdrant-client = "^1.9.1"
+duckduckgo-search = "^6.1.7"
+googlemaps = "^4.10.0"
+requests = "^2.31.0"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

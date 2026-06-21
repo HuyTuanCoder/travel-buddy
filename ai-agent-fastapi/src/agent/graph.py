@@ -11,6 +11,7 @@ from src.agent.nodes.rag_injector import inject_memories
 from src.agent.nodes.planner import plan_itinerary
 from src.agent.nodes.critic import evaluate_itinerary
 from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
+from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
 from src.workers.memory_tasks import process_evicted_memory
 
 logger = logging.getLogger(__name__)
@@ -81,7 +82,10 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     builder.add_node("rag_injector", inject_memories)
     builder.add_node("planner", plan_itinerary)
     builder.add_node("agent", call_gemini)
-    builder.add_node("tools", ToolNode([add_stop, remove_stop, update_stop, move_stop_between_days]))
+    builder.add_node("tools", ToolNode([
+        add_stop, remove_stop, update_stop, move_stop_between_days,
+        search_web, read_webpage, find_and_register_place
+    ]))
     builder.add_node("validator", validate_tool_call)
     builder.add_node("critic", evaluate_itinerary)
     builder.add_node("memory_manager", memory_manager)

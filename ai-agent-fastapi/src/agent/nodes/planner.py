@@ -49,8 +49,11 @@ def plan_itinerary(state: AgentState):
     Known Constraints & Memories:
     {rag_context}
     
+    CRITICAL RULE FOR LOCATIONS:
+    If you plan to add a stop to an itinerary, your checklist MUST include calling `find_and_register_place` first to obtain the Google Place ID. You cannot use `add_stop` without a valid Place ID. DO NOT fetch Place IDs just to talk about them; only fetch them if you are about to add a stop.
+    
     Do NOT execute the actions. Just write the checklist.
-    Example: ["Fetch user dietary restrictions", "Search for Sushi restaurants", "Add top sushi restaurant to itinerary"]
+    Example: ["Fetch user dietary restrictions", "Search web for trendy Sushi restaurants", "Register top sushi restaurant with find_and_register_place", "Add registered sushi restaurant to itinerary"]
     """
     
     try:
