@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import type { PanelImperativeHandle } from "react-resizable-panels"
-import { Users, Map as MapIcon, ChevronLeft, ChevronRight, PlusCircle, Calendar } from 'lucide-react'
+import { Users, Map as MapIcon, ChevronLeft, ChevronRight, PlusCircle, Calendar, MessageSquare } from 'lucide-react'
 import { APIProvider } from '@vis.gl/react-google-maps'
 import { DragDropContext } from '@hello-pangea/dnd'
 import type { DropResult } from '@hello-pangea/dnd'
@@ -20,7 +20,7 @@ import AddStopForm from './components/AddStopForm'
 import MemberPanel from './components/MemberPanel'
 import TripMapVisualizer from './components/TripMapVisualizer'
 import VerticalSidebar from './components/VerticalSidebar'
-
+import AIChatPanel from './components/AIChatPanel'
 // ==================== Status badge styles (same as TripCard) ====================
 
 const statusStyles: Record<string, string> = {
@@ -61,11 +61,13 @@ export default function ItineraryDetailPage() {
   const [isMembersOpen, setIsMembersOpen] = useState(false)
   const [isTimelineOpen, setIsTimelineOpen] = useState(true)
   const [isMapOpen, setIsMapOpen] = useState(true)
+  const [isChatOpen, setIsChatOpen] = useState(true)
 
-  const togglePanel = (panel: 'members' | 'timeline' | 'map') => {
+  const togglePanel = (panel: 'members' | 'timeline' | 'map' | 'chat') => {
     if (panel === 'members') setIsMembersOpen(!isMembersOpen)
     if (panel === 'timeline') setIsTimelineOpen(!isTimelineOpen)
     if (panel === 'map') setIsMapOpen(!isMapOpen)
+    if (panel === 'chat') setIsChatOpen(!isChatOpen)
   }
 
   useEffect(() => {
@@ -232,6 +234,13 @@ export default function ItineraryDetailPage() {
                 icon: MapIcon,
                 onClick: () => togglePanel('map'),
                 isActive: isMapOpen
+              },
+              {
+                id: 'chat',
+                label: 'AI Assistant',
+                icon: MessageSquare,
+                onClick: () => togglePanel('chat'),
+                isActive: isChatOpen
               }
             ]}
           />
@@ -240,7 +249,6 @@ export default function ItineraryDetailPage() {
             
             {/* Left Column: Sidebar (Members) */}
             {isMembersOpen && (
-              <>
                 <ResizablePanel 
                   defaultSize={20} 
                   minSize={15} 
@@ -267,16 +275,16 @@ export default function ItineraryDetailPage() {
                     )}
                   </div>
                 </ResizablePanel>
-                {(isTimelineOpen || isMapOpen) && <ResizableHandle withHandle />}
-              </>
             )}
+
+            {/* Handle before Timeline */}
+            {isTimelineOpen && isMembersOpen && <ResizableHandle withHandle />}
 
             {/* Middle Column: Day Timeline */}
             {isTimelineOpen && (
-              <>
                 <ResizablePanel 
-                  defaultSize={isMapOpen ? 50 : 100} 
-                  minSize={30} 
+                  defaultSize={40} 
+                  minSize={25} 
                   className="flex flex-col bg-white h-full relative z-10"
                 >
                   {/* Custom Tab Navigation */}
@@ -334,35 +342,50 @@ export default function ItineraryDetailPage() {
                     </DragDropContext>
                   </div>
                 </ResizablePanel>
-                {isMapOpen && <ResizableHandle withHandle />}
-              </>
             )}
+
+            {/* Handle before Map */}
+            {isMapOpen && (isMembersOpen || isTimelineOpen) && <ResizableHandle withHandle />}
 
             {/* Right Column: Sticky Map */}
             {isMapOpen && (
-              <ResizablePanel 
-                defaultSize={30} 
-                minSize={25} 
-                className="flex flex-col relative h-full bg-slate-100"
-              >
-                <div className="h-10 flex items-center justify-between px-3 border-b border-slate-200 bg-white shrink-0 z-10">
-                  <button onClick={() => togglePanel('map')} className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition-colors">
-                    <ChevronRight size={16} />
-                  </button>
-                  <div className="flex flex-1 items-center justify-end gap-1 ml-4">
-                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800">
-                      Map View
-                      <MapIcon size={12} />
+                <ResizablePanel 
+                  defaultSize={35} 
+                  minSize={20} 
+                  className="flex flex-col relative h-full bg-slate-100"
+                >
+                  <div className="h-10 flex items-center justify-between px-3 border-b border-slate-200 bg-white shrink-0 z-10">
+                    <button onClick={() => togglePanel('map')} className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition-colors">
+                      <ChevronRight size={16} />
+                    </button>
+                    <div className="flex flex-1 items-center justify-end gap-1 ml-4">
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800">
+                        Map View
+                        <MapIcon size={12} />
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex-1 relative overflow-y-auto bg-white">
-                  <TripMapVisualizer itinerary={itinerary} />
-                </div>
-              </ResizablePanel>
+                  <div className="flex-1 relative overflow-y-auto bg-white">
+                    <TripMapVisualizer itinerary={itinerary} />
+                  </div>
+                </ResizablePanel>
             )}
 
-            {!isMembersOpen && !isTimelineOpen && !isMapOpen && (
+            {/* Handle before Chat */}
+            {isChatOpen && (isMembersOpen || isTimelineOpen || isMapOpen) && <ResizableHandle withHandle />}
+
+            {/* Far Right Column: AI Chat Panel */}
+            {isChatOpen && (
+                <ResizablePanel
+                  defaultSize={25}
+                  minSize={20}
+                  className="h-full"
+                >
+                  <AIChatPanel tripId={id!} />
+                </ResizablePanel>
+            )}
+
+            {!isMembersOpen && !isTimelineOpen && !isMapOpen && !isChatOpen && (
               <div className="flex-1 h-full bg-slate-50 flex items-center justify-center">
                 <div className="text-center">
                   <MapIcon size={48} className="text-slate-300 mx-auto mb-4" />

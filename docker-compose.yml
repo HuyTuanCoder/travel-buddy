@@ -346,7 +346,7 @@ services:
 
   # Langfuse Server: The UI Dashboard for LLMOps and prompt tracking
   langfuse:
-    image: langfuse/langfuse:latest
+    image: langfuse/langfuse:2
     container_name: travel-buddy-langfuse
     depends_on:
       - langfuse-db
@@ -368,8 +368,8 @@ services:
     image: travel-buddy/ai-agent:latest
     container_name: ai-agent-fastapi
     build:
-      context: ./ai-agent-fastapi
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./ai-agent-fastapi/Dockerfile
     ports:
       - "${AI_AGENT_PORT}:${AI_AGENT_PORT}"
     environment:
@@ -403,8 +403,8 @@ services:
     image: travel-buddy/ai-agent:latest
     container_name: travel-buddy-ai-celery
     build:
-      context: ./ai-agent-fastapi
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: ./ai-agent-fastapi/Dockerfile
     command: ["celery", "-A", "src.workers.setup", "worker", "--loglevel=info"]
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}

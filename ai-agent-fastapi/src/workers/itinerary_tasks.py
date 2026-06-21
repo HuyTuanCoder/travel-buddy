@@ -31,7 +31,8 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
             "data": "AI is processing your request..."
         }))
 
-        async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
+        conn_string = DATABASE_URL.replace("+asyncpg", "")
+        async with AsyncPostgresSaver.from_conn_string(conn_string) as checkpointer:
             app_graph = build_graph(checkpointer)
             inputs = {"messages": [("user", message)]}
             
@@ -86,7 +87,8 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
             "data": "Executing approved changes via Java gRPC..."
         }))
 
-        async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
+        conn_string = DATABASE_URL.replace("+asyncpg", "")
+        async with AsyncPostgresSaver.from_conn_string(conn_string) as checkpointer:
             app_graph = build_graph(checkpointer)
             
             # Setup Langfuse tracing

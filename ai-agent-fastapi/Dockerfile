@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y \
 RUN pip install poetry==1.8.3
 
 # Copy poetry config
-COPY pyproject.toml poetry.lock ./
+COPY ai-agent-fastapi/pyproject.toml ai-agent-fastapi/poetry.lock ./
 
 # Install dependencies
 RUN poetry config virtualenvs.create false \
@@ -23,7 +23,8 @@ RUN python -m spacy download en_core_web_sm && \
     python -c "from sentence_transformers import SentenceTransformer; SentenceTransformer('all-MiniLM-L6-v2')"
 
 # Copy application code
-COPY . .
+COPY ai-agent-fastapi/ .
+COPY shared-proto/ /shared-proto/
 
 # Generate gRPC Stubs dynamically during build
 RUN ./scripts/generate_protos.sh
