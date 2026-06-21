@@ -4,7 +4,9 @@ from langchain_core.messages import SystemMessage
 from src.schemas.agent import AgentState
 from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
+from src.agent.tools.draft import draft_add_stop, draft_remove_stop
 from src.core.config import get_llm
+import json
 
 logger = structlog.get_logger(__name__)
 
@@ -12,7 +14,8 @@ llm = get_llm()
 
 tools = [
     add_stop, remove_stop, update_stop, move_stop_between_days,
-    search_web, read_webpage, find_and_register_place
+    search_web, read_webpage, find_and_register_place,
+    draft_add_stop, draft_remove_stop
 ]
 llm_with_tools = llm.bind_tools(tools)
 
@@ -25,9 +28,33 @@ def call_gemini(state: AgentState):
     plan = state.get("plan", [])
     critic_feedback = state.get("critic_feedback", "")
     validation_error = state.get("validation_error", "")
+    itinerary_draft = state.get("itinerary_draft", [])
+    
+    # Check if the last message was a ToolMessage from our draft tools.
+    # If so, we parse it and append/remove from the local itinerary_draft state.
+    if messages and messages[-1].type == "tool":
+        last_tool_msg = messages[-1]
+        if last_tool_msg.name in ["draft_add_stop", "draft_remove_stop"]:
+            try:
+                action_data = json.loads(last_tool_msg.content)
+                if action_data.get("action") == "add":
+                    # Remove the 'action' key and append
+                    del action_data["action"]
+                    itinerary_draft.append(action_data)
+                    logger.info(f"Agent Node: Appended to itinerary_draft. Current draft size: {len(itinerary_draft)}")
+                elif action_data.get("action") == "remove":
+                    itinerary_draft = [
+                        stop for stop in itinerary_draft 
+                        if not (stop.get("google_place_id") == action_data.get("google_place_id") and stop.get("day_number") == action_data.get("day_number"))
+                    ]
+            except Exception as e:
+                logger.error(f"Agent Node failed to parse draft tool output: {e}")
     
     # Construct a dynamic System Prompt for execution
     execution_context = "You are an AI Travel Agent Executor.\n"
+    
+    if itinerary_draft:
+        execution_context += f"\nYOUR CURRENT ITINERARY DRAFT (In Memory):\n{json.dumps(itinerary_draft, indent=2)}\n"
     
     if plan:
         execution_context += "\nYOUR MANDATORY PLAN (Execute these steps strictly):\n"
@@ -52,7 +79,9 @@ def call_gemini(state: AgentState):
 
     # Return new messages to be appended to state.
     # Also clear the validation error since we are trying again.
+    # Return new messages to be appended to state, and the updated draft!
     return {
         "messages": [response],
-        "validation_error": ""
+        "validation_error": "",
+        "itinerary_draft": itinerary_draft
     }

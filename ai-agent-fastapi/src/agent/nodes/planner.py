@@ -45,11 +45,15 @@ def plan_itinerary(state: AgentState):
     Known Constraints & Memories:
     {rag_context}
     
-    CRITICAL RULE FOR LOCATIONS:
-    If you plan to add a stop to an itinerary, your checklist MUST include calling `find_and_register_place` first to obtain the Google Place ID. You cannot use `add_stop` without a valid Place ID. DO NOT fetch Place IDs just to talk about them; only fetch them if you are about to add a stop.
+    CRITICAL PLANNING RULES:
+    1. VAGUE REQUESTS: If the user simply says "Plan a trip to X" with no dates, budget, or preferences, DO NOT generate a plan to build the itinerary. Instead, output a plan to: "Ask the user clarifying questions about dates, budget, and dietary preferences."
+    2. THE DRAFT STATE: The Agent maintains an in-memory `itinerary_draft`. You must instruct the agent to build the trip incrementally into this draft. Do NOT instruct the agent to call database tools (`add_stop`) until the user explicitly says "Build this" or "I approve the draft".
+    3. REAL-TIME DISCOVERY: Do not just rely on places you memorized in your training data. You should actively encourage the agent to use `search_web` to discover "what is currently popular", "hidden gems", or "highly rated new restaurants" to build a truly modern and exciting itinerary.
+    4. LOCATIONS: If you plan to add a stop to the draft, your checklist MUST include calling `find_and_register_place` first to obtain the Google Place ID.
     
     Do NOT execute the actions. Just write the checklist.
-    Example: ["Fetch user dietary restrictions", "Search web for trendy Sushi restaurants", "Register top sushi restaurant with find_and_register_place", "Add registered sushi restaurant to itinerary"]
+    Example Vague: ["Push back and ask user for trip duration, budget, and preferences"]
+    Example Detailed: ["Search web for trendy Sushi restaurants", "Register top sushi restaurant with find_and_register_place", "Append registered sushi restaurant to the itinerary_draft", "Show draft to user for approval"]
     """
     
     try:

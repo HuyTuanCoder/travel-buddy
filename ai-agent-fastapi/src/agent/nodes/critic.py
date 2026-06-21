@@ -24,6 +24,7 @@ def evaluate_itinerary(state: AgentState):
     """
     messages = state.get("messages", [])
     retry_count = state.get("retry_count", 0)
+    itinerary_draft = state.get("itinerary_draft", [])
     
     # 1. FAILSAFE: If we hit 3 retries, force a pass to avoid infinite loop
     if retry_count >= 3:
@@ -38,26 +39,34 @@ def evaluate_itinerary(state: AgentState):
     structured_llm = llm.with_structured_output(CriticEvaluation)
     
     # Reconstruct the full conversation context for the Critic
-    context_str = "\n".join([f"{msg.type}: {msg.content}" for msg in messages if msg.content])
+    # We only pass the last few messages to keep the Critic focused on recent semantics
+    recent_messages = messages[-5:] if len(messages) > 5 else messages
+    context_str = "\n".join([f"{msg.type}: {msg.content}" for msg in recent_messages if msg.content])
+    
+    import json
+    draft_str = json.dumps(itinerary_draft, indent=2) if itinerary_draft else "[]"
     
     system_prompt = f"""
     You are a ruthless, world-class Travel Critic.
-    Review the proposed conversation and itinerary updates below.
+    Review the Agent's proposed actions and the current ITINERARY DRAFT below.
     
     Check for:
     1. Geographic impossibilities (e.g., driving from NY to London).
     2. Scheduling impossibilities (e.g., visiting a museum at 3:00 AM).
-    3. Constraint violations (e.g., recommending a steakhouse if the RAG SystemMessage says the user is Vegan).
+    3. SEMANTIC VIOLATIONS: Does the draft actually align with what the user requested in the conversation log? If they asked for cheap vegan food, and the draft contains an expensive steakhouse, REJECT IT.
     
-    Conversation Log:
+    Current Itinerary Draft:
+    {draft_str}
+    
+    Recent Conversation Log:
     {context_str}
     
     If it is flawless, set is_valid to true.
-    If it has errors, set is_valid to false and provide scathing, explicit instructions on how the agent must fix it.
+    If it has errors or semantic violations, set is_valid to false and provide scathing, explicit instructions on how the agent must fix it.
     """
     
     try:
-        logger.info(f"Critic Node: Evaluating itinerary (Retry {retry_count}/3)...")
+        logger.info(f"Critic Node: Evaluating draft (Retry {retry_count}/3)...")
         evaluation = structured_llm.invoke(system_prompt)
         
         if evaluation.is_valid:

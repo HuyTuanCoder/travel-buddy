@@ -20,6 +20,10 @@ class AgentState(TypedDict):
     # The Critic Node evaluates the itinerary. If it fails, feedback is placed here.
     critic_feedback: str
     
-    # 5. Failsafe Retry Count
+    # 5. Incremental Draft State (Token Saver)
+    # The agent builds the trip here in memory. Only hits DB when user approves.
+    itinerary_draft: list[dict]
+    
+    # 6. Failsafe Retry Count
     # Prevents infinite loops between Agent and Critic.
     retry_count: int

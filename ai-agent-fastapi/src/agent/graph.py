@@ -12,6 +12,7 @@ from src.agent.nodes.planner import plan_itinerary
 from src.agent.nodes.critic import evaluate_itinerary
 from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
+from src.agent.tools.draft import draft_add_stop, draft_remove_stop
 from src.workers.memory_tasks import process_evicted_memory
 
 logger = logging.getLogger(__name__)
@@ -84,7 +85,8 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     builder.add_node("agent", call_gemini)
     builder.add_node("tools", ToolNode([
         add_stop, remove_stop, update_stop, move_stop_between_days,
-        search_web, read_webpage, find_and_register_place
+        search_web, read_webpage, find_and_register_place,
+        draft_add_stop, draft_remove_stop
     ]))
     builder.add_node("validator", validate_tool_call)
     builder.add_node("critic", evaluate_itinerary)
