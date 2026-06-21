@@ -1,9 +1,10 @@
 import spacy
 import logging
 from src.schemas.memory import ExtractedFact, FactCategory, PermanenceLevel
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 import os
+
+from src.core.config import get_llm
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +57,7 @@ def _llm_extraction_fallback(text: str) -> list[ExtractedFact]:
     """
     Uses structured output via Gemini to strictly parse complex facts.
     """
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        temperature=0,
-        api_key=os.getenv("GEMINI_API_KEY")
-    )
+    llm = get_llm(model_name="gemini-1.5-flash", temperature=0)
     
     # Force the LLM to output a list of ExtractedFact JSONs
     structured_llm = llm.with_structured_output(list[ExtractedFact])

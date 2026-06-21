@@ -2,16 +2,13 @@ import os
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
 
-# get the database url from env
-DATABASE_URL = os.getenv(
-    "DATABASE_URL", 
-    "postgresql+asyncpg://postgres:postgres@localhost:5432/postgres"
-)
+from src.core.config import settings
 
-ENVIRONMENT = os.getenv("ENVIRONMENT", "development")
+# get the database url from env
+DATABASE_URL = settings.DATABASE_URL
 
 # create the engine that manage connection pool to postgres
-is_dev = ENVIRONMENT == "development"
+is_dev = settings.ENV == "development"
 engine = create_async_engine(DATABASE_URL, echo=is_dev)
 
 # no global connection

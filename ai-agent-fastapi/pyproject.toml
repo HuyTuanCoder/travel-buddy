@@ -33,6 +33,9 @@ qdrant-client = "^1.9.1"
 duckduckgo-search = "^6.1.7"
 googlemaps = "^4.10.0"
 requests = "^2.31.0"
+structlog = "^26.1.0"
+langchain-google-vertexai = "<2.0.0"
+pydantic-settings = "^2.14.2"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

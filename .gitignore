@@ -11,6 +11,8 @@
 
 # Environment
 .env*
+gcp-credentials.json
+
 
 # Other
 implementation_plan.md

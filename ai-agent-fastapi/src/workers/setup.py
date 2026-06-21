@@ -1,7 +1,11 @@
 import os
 from celery import Celery
+from src.core.telemetry import setup_telemetry
+from src.core.config import settings
 
-RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://enterprise_user:enterprise_password@rabbitmq:5672//")
+setup_telemetry()
+
+RABBITMQ_URL = settings.RABBITMQ_URL
 
 celery_app = Celery(
     "travel_buddy_ai",

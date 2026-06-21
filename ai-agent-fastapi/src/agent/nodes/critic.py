@@ -1,12 +1,12 @@
 from pydantic import BaseModel, Field
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, RemoveMessage, ToolMessage, AIMessage
-import logging
+import structlog
 import os
 
 from src.schemas.agent import AgentState
+from src.core.config import get_llm
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 class CriticEvaluation(BaseModel):
     is_valid: bool = Field(
@@ -33,11 +33,7 @@ def evaluate_itinerary(state: AgentState):
             # We don't increment retry_count here, just let it pass
         }
         
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-pro-latest",
-        temperature=0, 
-        api_key=os.getenv("GEMINI_API_KEY")
-    )
+    llm = get_llm(temperature=0)
     
     structured_llm = llm.with_structured_output(CriticEvaluation)
     

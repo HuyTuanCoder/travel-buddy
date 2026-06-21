@@ -1,6 +1,9 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from src.core.telemetry import setup_telemetry
+
+setup_telemetry()
 
 from src.api.chat_routes import router as chat_router
 from src.core.database import DATABASE_URL

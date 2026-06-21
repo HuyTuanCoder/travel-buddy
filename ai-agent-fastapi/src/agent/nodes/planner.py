@@ -1,12 +1,12 @@
 from pydantic import BaseModel, Field
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
-import logging
+import structlog
 import os
 
 from src.schemas.agent import AgentState
+from src.core.config import get_llm
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 class PlanChecklist(BaseModel):
     steps: list[str] = Field(
@@ -28,11 +28,7 @@ def plan_itinerary(state: AgentState):
         # If no human message (e.g. tool result), skip planning.
         return {}
         
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-pro-latest",
-        temperature=0, # Strict reasoning requires 0 temp
-        api_key=os.getenv("GEMINI_API_KEY")
-    )
+    llm = get_llm(temperature=0)
     
     structured_llm = llm.with_structured_output(PlanChecklist)
     

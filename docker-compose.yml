@@ -374,12 +374,20 @@ services:
       - "${AI_AGENT_PORT}:${AI_AGENT_PORT}"
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCP_LOCATION=${GCP_LOCATION}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-credentials.json
       - REDIS_URL=redis://redis:6379/0
       - RABBITMQ_URL=amqp://enterprise_user:enterprise_password@rabbitmq:5672//
       - QDRANT_URL=http://qdrant:6333
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
       - ITINERARY_GRPC_URL=itinerary-service:${ITINERARY_GRPC_PORT}
       - LOCATION_GRPC_URL=location-service:${LOCATION_GRPC_PORT}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST}
+    volumes:
+      - ./gcp-credentials.json:/app/gcp-credentials.json:ro
     networks:
       - travel-buddy-network
     depends_on:
@@ -400,12 +408,20 @@ services:
     command: ["celery", "-A", "src.workers.setup", "worker", "--loglevel=info"]
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCP_LOCATION=${GCP_LOCATION}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-credentials.json
       - REDIS_URL=redis://redis:6379/0
       - RABBITMQ_URL=amqp://enterprise_user:enterprise_password@rabbitmq:5672//
       - QDRANT_URL=http://qdrant:6333
       - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
       - ITINERARY_GRPC_URL=itinerary-service:${ITINERARY_GRPC_PORT}
       - LOCATION_GRPC_URL=location-service:${LOCATION_GRPC_PORT}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST}
+    volumes:
+      - ./gcp-credentials.json:/app/gcp-credentials.json:ro
     networks:
       - travel-buddy-network
     depends_on:

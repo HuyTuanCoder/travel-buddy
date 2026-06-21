@@ -1,17 +1,17 @@
 import os
 import requests
-import logging
+import structlog
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
 from duckduckgo_search import DDGS
 import googlemaps
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage
 import grpc
 from src.generated import location_pb2
 from src.generated import location_pb2_grpc
+from src.core.config import settings, get_llm
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 # --- Search Web Tool ---
 class SearchWebArgs(BaseModel):
@@ -63,11 +63,7 @@ def read_webpage(url: str, extraction_goal: str) -> str:
         
         # FAILSAFE: The markdown could be 20,000 tokens. We must not return this directly to the LangGraph state.
         # We spawn an isolated summarizer LLM to extract only the necessary facts.
-        llm = ChatGoogleGenerativeAI(
-            model="gemini-1.5-flash-latest", # Use the fast/cheap model for summarization
-            temperature=0, 
-            api_key=os.getenv("GEMINI_API_KEY")
-        )
+        llm = get_llm(model_name="gemini-1.5-flash", temperature=0)
         
         system_prompt = SystemMessage(content=f"""
         You are a highly efficient Web Extraction Assistant.
@@ -101,7 +97,7 @@ def find_and_register_place(query: str) -> str:
     It returns the official google_place_id which you can then pass to 'add_stop'.
     """
     logger.info(f"Discovery Tool: Resolving Google Place ID for '{query}'...")
-    api_key = os.getenv("GOOGLE_MAPS_API_KEY")
+    api_key = settings.GOOGLE_MAPS_API_KEY
     if not api_key:
         return "Error: GOOGLE_MAPS_API_KEY environment variable is missing."
         
@@ -123,7 +119,7 @@ def find_and_register_place(query: str) -> str:
         logger.info(f"Resolved Place: {name} ({place_id})")
         
         # 2. Register the Place with the Java Location Service DB via gRPC
-        location_grpc_url = os.getenv("LOCATION_GRPC_URL", "localhost:9091")
+        location_grpc_url = settings.LOCATION_GRPC_URL
         
         logger.info(f"Registering place {place_id} with Location Service (gRPC)...")
         

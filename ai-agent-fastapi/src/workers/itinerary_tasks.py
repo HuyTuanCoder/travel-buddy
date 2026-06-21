@@ -1,19 +1,26 @@
 import os
 import json
 import asyncio
+import structlog
 import redis.asyncio as redis
 from celery import shared_task
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+from langfuse.callback import CallbackHandler
 
 from src.agent.graph import build_graph
 from src.core.database import DATABASE_URL
+from src.core.config import settings
 
-REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
+REDIS_URL = settings.REDIS_URL
+logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------
 # Core Async Handlers that run LangGraph
 # ---------------------------------------------------------
 async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: str):
+    log = logger.bind(thread_id=trip_id, user_id=user_id, correlation_id=correlation_id)
+    log.info("Starting AI chat task")
+    
     redis_client = redis.from_url(REDIS_URL)
     pubsub_channel = f"stream:{trip_id}"
     
@@ -27,9 +34,17 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
         async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
             app_graph = build_graph(checkpointer)
             inputs = {"messages": [("user", message)]}
-            config = {"configurable": {"thread_id": trip_id}}
+            
+            # Setup Langfuse tracing
+            langfuse_handler = CallbackHandler()
+            
+            config = {
+                "configurable": {"thread_id": trip_id},
+                "callbacks": [langfuse_handler]
+            }
 
             # Run graph
+            log.info("Invoking LangGraph")
             await app_graph.ainvoke(inputs, config=config)
             
             # Check if paused before a tool execution
@@ -48,7 +63,9 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                     "event": "completed",
                     "data": ai_response
                 }))
+                log.info("Chat task completed successfully")
     except Exception as e:
+        log.error("Chat task failed", exc_info=True)
         await redis_client.publish(pubsub_channel, json.dumps({
             "event": "error",
             "data": f"Task Failed: {str(e)}"
@@ -57,6 +74,9 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
         await redis_client.close()
 
 async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
+    log = logger.bind(thread_id=trip_id, user_id=user_id, correlation_id=correlation_id)
+    log.info("Starting tool approval task")
+    
     redis_client = redis.from_url(REDIS_URL)
     pubsub_channel = f"stream:{trip_id}"
     
@@ -68,10 +88,18 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
 
         async with AsyncPostgresSaver.from_conn_string(DATABASE_URL) as checkpointer:
             app_graph = build_graph(checkpointer)
-            config = {"configurable": {"thread_id": trip_id}}
+            
+            # Setup Langfuse tracing
+            langfuse_handler = CallbackHandler()
+            
+            config = {
+                "configurable": {"thread_id": trip_id},
+                "callbacks": [langfuse_handler]
+            }
             
             state = await app_graph.aget_state(config)
             if not state.next or "tools" not in state.next:
+                log.warning("No tool call pending approval")
                 await redis_client.publish(pubsub_channel, json.dumps({
                     "event": "error",
                     "data": "No tool call pending approval."
@@ -79,6 +107,7 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
                 return
 
             # Resume the graph by passing None as input
+            log.info("Resuming LangGraph execution")
             await app_graph.ainvoke(None, config=config)
             
             # Check state again to see if it finished or hit another tool interrupt
@@ -96,7 +125,9 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
                     "event": "completed",
                     "data": ai_response
                 }))
+                log.info("Tool approval task completed successfully")
     except Exception as e:
+        log.error("Tool approval task failed", exc_info=True)
         await redis_client.publish(pubsub_channel, json.dumps({
             "event": "error",
             "data": f"Task Failed: {str(e)}"
