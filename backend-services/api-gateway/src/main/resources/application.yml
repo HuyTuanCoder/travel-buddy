@@ -35,6 +35,9 @@ spring:
               uri: http://ai-agent-fastapi:8007
               predicates:
                 - Path=/ai/**
+              filters:
+                - RemoveRequestHeader=Upgrade
+                - RemoveRequestHeader=Connection
 
 server:
   port: 8000

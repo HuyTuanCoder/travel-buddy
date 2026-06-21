@@ -9,6 +9,7 @@ import redis.asyncio as redis
 
 # We import the celery tasks from the modular workers directory
 from src.workers.itinerary_tasks import process_chat_message, approve_tool_call
+from src.workers.setup import celery_app
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
@@ -32,6 +33,7 @@ async def chat_endpoint(
     We leverage the Spring API Gateway injected headers for distributed tracing/auth.
     """
     # .delay() pushes this to RabbitMQ instantly
+    print('broker_url:', process_chat_message.app.conf.broker_url, flush=True)
     process_chat_message.delay(
         trip_id=request.trip_id,
         message=request.message,

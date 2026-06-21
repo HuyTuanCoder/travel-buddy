@@ -14,7 +14,8 @@ export const useAIChat = (tripId: string) => {
     // We establish the SSE connection when the component mounts
     // Assuming backend FastAPI runs on an accessible route. We might need to proxy this or use full URL.
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-    const sseUrl = `${baseUrl}/ai/chat/${tripId}/stream`;
+    const token = localStorage.getItem('access_token');
+    const sseUrl = `${baseUrl}/ai/chat/${tripId}/stream${token ? `?token=${token}` : ''}`;
 
     eventSourceRef.current = new EventSource(sseUrl);
 
