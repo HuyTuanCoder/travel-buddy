@@ -27,7 +27,9 @@ psycopg-pool = "^3.3.1"
 grpcio = "~1.62.0"
 grpcio-tools = "~1.62.0"
 pika = "^1.4.1"
-
+spacy = "^3.7.4"
+sentence-transformers = "^3.0.1"
+qdrant-client = "^1.9.1"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"

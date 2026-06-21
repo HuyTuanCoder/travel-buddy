@@ -8,7 +8,7 @@ from pydantic import BaseModel
 import redis.asyncio as redis
 
 # We import the celery tasks from the modular workers directory
-from src.workers.tasks import process_chat_message, approve_tool_call
+from src.workers.itinerary_tasks import process_chat_message, approve_tool_call
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
 
