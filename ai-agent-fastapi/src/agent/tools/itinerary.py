@@ -10,7 +10,7 @@ from src.generated import itinerary_pb2_grpc
 class AddStopArgs(BaseModel):
     trip_id: str = Field(description="The UUID of the itinerary/trip")
     day_number: int = Field(description="The 1-indexed day number to add the stop to (e.g. 1 for Day 1)")
-    google_place_id: str = Field(description="The Google Place ID of the location to add. For testing without a real place ID, use 'ChIJiQBp3E9u5kcRbgWUKqQjY4w'")
+    google_place_id: str = Field(description="The Google Place ID of the location to add. Must be obtained by calling find_and_register_place first.")
     stop_type: str = Field(description="The category of the stop. Allowed values: ATTRACTION, RESTAURANT, LODGING, TRANSIT, UNKNOWN")
     user_notes: str = Field(default="", description="Optional notes or context about this stop for the user")
     arrival_time: str = Field(default="", description="Optional planned arrival time in HH:mm format")

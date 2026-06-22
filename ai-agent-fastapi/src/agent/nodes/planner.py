@@ -13,11 +13,26 @@ class PlanChecklist(BaseModel):
         description="A strict, step-by-step checklist of actions to fulfill the user's request."
     )
 
-def plan_itinerary(state: AgentState):
+def plan_itinerary(state: AgentState, config: dict):
     """
     Gate 1: The Planner Node.
     Forces the AI to generate a strict reasoning trace before executing tools.
     """
+    import redis
+    import json
+    from src.core.config import settings
+    
+    thread_id = config.get("configurable", {}).get("thread_id", "")
+    if thread_id:
+        try:
+            r = redis.from_url(settings.REDIS_URL)
+            r.publish(f"stream:{thread_id}", json.dumps({
+                "type": "thought",
+                "content": "Analyzing request constraints and building step-by-step checklist..."
+            }))
+        except Exception as e:
+            logger.error(f"Failed to publish thought: {e}")
+
     messages = state.get("messages", [])
     if not messages:
         return {"plan": []}
@@ -32,11 +47,8 @@ def plan_itinerary(state: AgentState):
     
     structured_llm = llm.with_structured_output(PlanChecklist)
     
-    # Extract the RAG context (SystemMessage) if it exists
-    rag_context = ""
-    for msg in messages:
-        if isinstance(msg, SystemMessage):
-            rag_context += msg.content + "\n"
+    # Extract the RAG context from the state
+    rag_context = state.get("rag_context", "")
             
     system_prompt = f"""
     You are the Master Itinerary Planner. 
@@ -61,12 +73,18 @@ def plan_itinerary(state: AgentState):
         
         # Combine system prompt and user message into a single string to avoid Gemini SystemMessage ordering bugs with structured output
         combined_prompt = f"{system_prompt}\n\nUSER REQUEST:\n{latest_human_msg.content}"
+
         
         # We invoke the LLM with the combined prompt
         plan_output = structured_llm.invoke(combined_prompt)
         
-        # Fallback: Sometimes Gemini returns a raw list instead of the Pydantic object
-        steps = plan_output.steps if hasattr(plan_output, 'steps') else plan_output if isinstance(plan_output, list) else []
+        if hasattr(plan_output, 'steps'):
+            steps = plan_output.steps
+        elif isinstance(plan_output, list) and len(plan_output) > 0 and isinstance(plan_output[0], dict):
+            # Handle langchain-google-vertexai 1.0.4 returning raw OpenAI tool schema format
+            steps = plan_output[0].get("args", {}).get("steps", [])
+        else:
+            steps = []
         
         # Reset retry_count on new plan
         return {

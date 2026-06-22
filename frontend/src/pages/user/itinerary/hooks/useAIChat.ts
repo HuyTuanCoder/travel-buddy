@@ -8,8 +8,10 @@ export const useAIChat = (tripId: string) => {
   const [isThinking, setIsThinking] = useState<boolean>(false);
   const [pendingDraft, setPendingDraft] = useState<any[] | null>(null);
 
-  // Ref to hold EventSource so we can clean it up
+  // Refs for simulating smooth typewriter streaming
   const eventSourceRef = useRef<EventSource | null>(null);
+  const streamBufferRef = useRef<string>('');
+  const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -30,18 +32,30 @@ export const useAIChat = (tripId: string) => {
     };
   }, [tripId]);
 
-  useEffect(() => {
-    // We establish the SSE connection when the component mounts
+  const connectStream = useCallback(() => {
+    if (eventSourceRef.current && eventSourceRef.current.readyState !== EventSource.CLOSED) {
+      return;
+    }
     // Assuming backend FastAPI runs on an accessible route. We might need to proxy this or use full URL.
     const baseUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     const token = localStorage.getItem('access_token');
-    const sseUrl = `${baseUrl}/ai/chat/${tripId}/stream${token ? `?token=${token}` : ''}`;
+    const sseUrl = `${baseUrl}/api/v1/ai-stream/chat/${tripId}/stream${token ? `?token=${token}` : ''}`;
 
     eventSourceRef.current = new EventSource(sseUrl);
 
+    eventSourceRef.current.onopen = () => {
+      console.log("[SSE] Connection opened to:", sseUrl);
+    };
+
+    eventSourceRef.current.onerror = (error) => {
+      console.error("[SSE] Connection error:", error);
+    };
+
     eventSourceRef.current.onmessage = (event) => {
+      console.log("[SSE] Raw event received:", event.data);
       try {
         const data: StreamEvent = JSON.parse(event.data);
+        console.log("[SSE] Parsed event:", data.type, data);
 
         switch (data.type) {
           case 'thought':
@@ -51,18 +65,32 @@ export const useAIChat = (tripId: string) => {
 
           case 'token':
             setIsThinking(true); // Ensure thinking stays true until 'done'
-            setMessages((prev) => {
-              // Find if we have an ongoing 'agent' streaming message
-              const lastMsg = prev[prev.length - 1];
-              if (lastMsg && lastMsg.role === 'agent' && lastMsg.isStreaming) {
-                const updated = [...prev];
-                updated[updated.length - 1].content += data.content;
-                return updated;
-              } else {
-                // Create new agent message
-                return [...prev, { id: crypto.randomUUID(), role: 'agent', content: data.content, isStreaming: true }];
-              }
-            });
+            streamBufferRef.current += data.content;
+            
+            // Start the typewriter loop if it's not already running
+            if (!flushIntervalRef.current) {
+              flushIntervalRef.current = setInterval(() => {
+                if (streamBufferRef.current.length > 0) {
+                  // Pop 1 character at a time for a natural reading speed
+                  const chars = streamBufferRef.current.substring(0, 1);
+                  streamBufferRef.current = streamBufferRef.current.substring(1);
+                  
+                  setMessages((prev) => {
+                    const lastMsg = prev[prev.length - 1];
+                    if (lastMsg && lastMsg.role === 'agent' && lastMsg.isStreaming) {
+                      const updated = [...prev];
+                      updated[updated.length - 1] = {
+                        ...lastMsg,
+                        content: lastMsg.content + chars
+                      };
+                      return updated;
+                    } else {
+                      return [...prev, { id: crypto.randomUUID(), role: 'agent', content: chars, isStreaming: true }];
+                    }
+                  });
+                }
+              }, 30); // 30ms per character = 33 chars/sec
+            }
             break;
 
           case 'draft_update':
@@ -75,26 +103,50 @@ export const useAIChat = (tripId: string) => {
             break;
 
           case 'clear_bubble':
-            // Finalize the current bubble without unlocking the UI
-            setMessages((prev) => {
-              const updated = [...prev];
-              if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
-                updated[updated.length - 1].isStreaming = false;
-              }
-              return updated;
-            });
-            break;
-
           case 'done':
-            setIsThinking(false);
-            setCurrentThought('');
-            setMessages((prev) => {
-              const updated = [...prev];
-              if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
-                updated[updated.length - 1].isStreaming = false;
+            // Instantly flush the remaining buffer to the screen
+            if (streamBufferRef.current.length > 0) {
+              const remaining = streamBufferRef.current;
+              streamBufferRef.current = '';
+              setMessages((prev) => {
+                const updated = [...prev];
+                if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
+                  const lastMsg = updated[updated.length - 1];
+                  updated[updated.length - 1] = {
+                    ...lastMsg,
+                    content: lastMsg.content + remaining,
+                    isStreaming: false
+                  };
+                }
+                return updated;
+              });
+            } else {
+              setMessages((prev) => {
+                const updated = [...prev];
+                if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
+                  const lastMsg = updated[updated.length - 1];
+                  updated[updated.length - 1] = {
+                    ...lastMsg,
+                    isStreaming: false
+                  };
+                }
+                return updated;
+              });
+            }
+            
+            // Clean up the interval
+            if (flushIntervalRef.current) {
+              clearInterval(flushIntervalRef.current);
+              flushIntervalRef.current = null;
+            }
+
+            if (data.type === 'done') {
+              setIsThinking(false);
+              setCurrentThought('');
+              if (eventSourceRef.current) {
+                eventSourceRef.current.close();
               }
-              return updated;
-            });
+            }
             break;
 
           case 'tool_call':
@@ -118,13 +170,20 @@ export const useAIChat = (tripId: string) => {
       console.error("SSE Connection Error", err);
       // Let it automatically reconnect
     };
+  }, [tripId]);
 
+  useEffect(() => {
+    connectStream();
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
       }
+      if (flushIntervalRef.current) {
+        clearInterval(flushIntervalRef.current);
+        flushIntervalRef.current = null;
+      }
     };
-  }, [tripId]);
+  }, [connectStream]);
 
   const sendMessage = useCallback(async (text: string) => {
     // Optimistically add user message
@@ -140,6 +199,7 @@ export const useAIChat = (tripId: string) => {
     });
 
     try {
+      connectStream();
       await chatService.sendMessage(tripId, text);
     } catch (err) {
       console.error("Failed to send message", err);
@@ -151,6 +211,7 @@ export const useAIChat = (tripId: string) => {
     setIsThinking(true);
     setCurrentThought("> Committing draft to database...");
     try {
+      connectStream();
       await chatService.approveDraft(tripId);
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'agent', content: "Draft successfully committed to your itinerary!" }]);
       setPendingDraft(null); // Clear draft on success

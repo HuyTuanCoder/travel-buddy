@@ -108,16 +108,13 @@ async def stream_chat(trip_id: str, request: Request):
         
         try:
             while True:
-                # Disconnect if client dropped connection (e.g. closed browser)
-                if await request.is_disconnected():
-                    break
+                # Disconnect check is sometimes buggy in Starlette, let's remove it for now to test
+                # if await request.is_disconnected():
+                #     break
                 
                 now = time.monotonic()
                 
-                # Server-side timeout: if no real event in SSE_TIMEOUT seconds, send error and close
-                if now - last_event_time > SSE_TIMEOUT:
-                    yield f"data: {json.dumps({'event': 'error', 'data': 'AI processing timed out after {0} seconds. Please try again.'.format(SSE_TIMEOUT)})}\n\n"
-                    break
+                # The heartbeat keepalive below will ensure the connection stays active.
                 
                 # Heartbeat keepalive every SSE_HEARTBEAT_INTERVAL seconds
                 if now - last_heartbeat_time > SSE_HEARTBEAT_INTERVAL:
@@ -134,6 +131,11 @@ async def stream_chat(trip_id: str, request: Request):
                     last_event_time = now
                     
                 await asyncio.sleep(0.1) # Small sleep to prevent CPU spin
+        except Exception as e:
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"FATAL SSE ERROR: {e}\n{error_trace}")
+            yield f"event: error\ndata: {str(e)}\n\n"
         finally:
             await pubsub.unsubscribe(f"stream:{trip_id}")
             await redis_client.close()

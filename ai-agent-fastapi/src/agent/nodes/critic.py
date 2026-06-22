@@ -16,12 +16,27 @@ class CriticEvaluation(BaseModel):
         description="If invalid, provide strict, scathing feedback on exactly what went wrong and how to fix it. If valid, leave empty."
     )
 
-def evaluate_itinerary(state: AgentState):
+def evaluate_itinerary(state: AgentState, config: dict):
     """
     Gate 3: The Critic Node (Reflexion).
     Evaluates the agent's work. If it fails, it violently loops back to the agent.
     Also implements the Intra-Turn State Collapser to prevent OOM errors.
     """
+    import redis
+    import json
+    from src.core.config import settings
+    
+    thread_id = config.get("configurable", {}).get("thread_id", "")
+    if thread_id:
+        try:
+            r = redis.from_url(settings.REDIS_URL)
+            r.publish(f"stream:{thread_id}", json.dumps({
+                "type": "thought",
+                "content": "Critic evaluating proposed itinerary against constraints..."
+            }))
+        except Exception as e:
+            logger.error(f"Failed to publish thought: {e}")
+
     messages = state.get("messages", [])
     retry_count = state.get("retry_count", 0)
     itinerary_draft = state.get("itinerary_draft", [])

@@ -27,3 +27,7 @@ class AgentState(TypedDict):
     # 6. Failsafe Retry Count
     # Prevents infinite loops between Agent and Critic.
     retry_count: int
+    
+    # 7. Ephemeral RAG Context
+    # Stores retrieved memories for the current turn without polluting the global messages array.
+    rag_context: str

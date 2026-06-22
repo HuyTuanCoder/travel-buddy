@@ -38,7 +38,12 @@ def route_from_critic(state: AgentState):
         
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        return "tools" # Critic approved the tool call! Go execute it!
+        # Check if the tool requires explicit user approval (commits)
+        commit_tool_names = ["add_stop", "remove_stop", "update_stop", "move_stop_between_days"]
+        for tc in last_message.tool_calls:
+            if tc["name"] in commit_tool_names:
+                return "commit_tools"
+        return "auto_tools"
         
     return "memory_manager" # Approved final text. Safe to process memory and end.
 
@@ -83,8 +88,10 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     builder.add_node("rag_injector", inject_memories)
     builder.add_node("planner", plan_itinerary)
     builder.add_node("agent", call_gemini)
-    builder.add_node("tools", ToolNode([
-        add_stop, remove_stop, update_stop, move_stop_between_days,
+    builder.add_node("commit_tools", ToolNode([
+        add_stop, remove_stop, update_stop, move_stop_between_days
+    ]))
+    builder.add_node("auto_tools", ToolNode([
         search_web, read_webpage, find_and_register_place,
         draft_add_stop, draft_remove_stop
     ]))
@@ -109,9 +116,10 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     builder.add_conditional_edges("critic", route_from_critic)
     
     # after tools finish executing, we go back to the agent to summarize or use more tools
-    builder.add_edge("tools", "agent")
+    builder.add_edge("commit_tools", "agent")
+    builder.add_edge("auto_tools", "agent")
     
     # memory manager always ends
     builder.add_edge("memory_manager", END)
 
-    return builder.compile(checkpointer=checkpointer, interrupt_before=["tools"])
+    return builder.compile(checkpointer=checkpointer, interrupt_before=["commit_tools"])

@@ -47,11 +47,9 @@ def inject_memories(state: AgentState, config: dict):
             system_msg = SystemMessage(content=memory_context)
             logger.info(f"Injected {len(memories)} memories into context.")
             
-            # Note: We don't overwrite messages, we just append the SystemMessage.
-            # In a real setup, we might inject this at the *start* of the message array,
-            # but appending it before the LLM node also works.
-            return {"messages": [system_msg]}
+            # We return the context as a separate state variable so it doesn't pollute the permanent messages array.
+            return {"rag_context": memory_context}
     except Exception as e:
         logger.error(f"Failed to inject RAG memories: {e}")
         
-    return {"messages": []}
+    return {"rag_context": ""}

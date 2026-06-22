@@ -138,7 +138,7 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
             }
             
             state = await app_graph.aget_state(config)
-            if not state.next or "tools" not in state.next:
+            if not state.next or "commit_tools" not in state.next:
                 log.warning("No tool call pending approval")
                 await redis_client.publish(pubsub_channel, json.dumps({
                     "event": "error",
@@ -187,7 +187,7 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
                 "content": json.dumps(current_draft)
             }))
             
-            if new_state.next and "tools" in new_state.next:
+            if new_state.next and "commit_tools" in new_state.next:
                 last_msg = new_state.values["messages"][-1]
                 await redis_client.publish(pubsub_channel, json.dumps({
                     "type": "tool_call",

@@ -10,14 +10,17 @@ import json
 
 logger = structlog.get_logger(__name__)
 
-llm = get_llm()
-
-tools = [
+ALL_TOOLS = [
     add_stop, remove_stop, update_stop, move_stop_between_days,
+    search_web, read_webpage, find_and_register_place,
+    draft_add_stop, draft_remove_stop
 ]
-llm_with_tools = llm.bind_tools(tools)
 
 async def call_gemini(state: AgentState, config: dict):
+    # Instantiate LLM inside the function to avoid gRPC event loop binding issues in Celery prefork workers.
+    # planner.py and critic.py already do this correctly.
+    llm = get_llm()
+    llm_with_tools = llm.bind_tools(ALL_TOOLS)
     """
     Gate 2: The Executor Agent.
     Executes tools strictly following the Planner's blueprint and addressing any Critic/Validator feedback.
@@ -64,6 +67,10 @@ async def call_gemini(state: AgentState, config: dict):
         
     if validation_error:
         execution_context += f"\nTOOL VALIDATION ERROR:\n{validation_error}\nYou MUST fix your JSON schema.\n"
+        
+    rag_context = state.get("rag_context", "")
+    if rag_context:
+        execution_context += f"\nKNOWN CONSTRAINTS & MEMORIES:\n{rag_context}\n"
         
     # Inject the execution context as a single SystemMessage
     sys_msg = SystemMessage(content=execution_context)
