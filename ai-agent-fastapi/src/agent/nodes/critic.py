@@ -69,11 +69,19 @@ def evaluate_itinerary(state: AgentState):
         logger.info(f"Critic Node: Evaluating draft (Retry {retry_count}/3)...")
         evaluation = structured_llm.invoke(system_prompt)
         
-        if evaluation.is_valid:
+        # Fallback for Gemini returning a raw dict instead of Pydantic model
+        if isinstance(evaluation, dict):
+            is_valid = evaluation.get("is_valid", True)
+            feedback = evaluation.get("feedback", "")
+        else:
+            is_valid = getattr(evaluation, "is_valid", True)
+            feedback = getattr(evaluation, "feedback", "")
+        
+        if is_valid:
             logger.info("Critic Node: APPROVED.")
             return {"critic_feedback": ""}
         else:
-            logger.warning(f"Critic Node: REJECTED. Feedback: {evaluation.feedback}")
+            logger.warning(f"Critic Node: REJECTED. Feedback: {feedback}")
             
             # --- THE INTRA-TURN STATE COLLAPSER ---
             # If the critic rejects, we do NOT want to append this entire failure trace 

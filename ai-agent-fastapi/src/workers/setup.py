@@ -16,4 +16,9 @@ celery_app = Celery(
 celery_app.conf.update(
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    # Task timeouts: soft limit raises SoftTimeLimitExceeded, hard limit kills the worker
+    task_soft_time_limit=90,
+    task_time_limit=120,
+    # Broker connection retry on startup
+    broker_connection_retry_on_startup=True,
 )

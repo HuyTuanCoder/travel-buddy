@@ -14,12 +14,10 @@ llm = get_llm()
 
 tools = [
     add_stop, remove_stop, update_stop, move_stop_between_days,
-    search_web, read_webpage, find_and_register_place,
-    draft_add_stop, draft_remove_stop
 ]
 llm_with_tools = llm.bind_tools(tools)
 
-def call_gemini(state: AgentState):
+async def call_gemini(state: AgentState, config: dict):
     """
     Gate 2: The Executor Agent.
     Executes tools strictly following the Planner's blueprint and addressing any Critic/Validator feedback.
@@ -67,15 +65,18 @@ def call_gemini(state: AgentState):
     if validation_error:
         execution_context += f"\nTOOL VALIDATION ERROR:\n{validation_error}\nYou MUST fix your JSON schema.\n"
         
-    # Inject the execution context as a SystemMessage
+    # Inject the execution context as a single SystemMessage
     sys_msg = SystemMessage(content=execution_context)
     
-    # We pass the sys_msg + all conversation messages
-    invoke_messages = [sys_msg] + messages
+    # Filter out any other SystemMessages (like from RAG) to prevent Gemini crashes
+    # Gemini requires exactly one SystemMessage, strictly at the beginning of the history.
+    filtered_history = [msg for msg in messages if not isinstance(msg, SystemMessage)]
+    
+    invoke_messages = [sys_msg] + filtered_history
 
     logger.info("Agent Node: Executing next step...")
-    # pass to llm
-    response = llm_with_tools.invoke(invoke_messages)
+    # pass to llm using ainvoke so LangGraph can stream chunks
+    response = await llm_with_tools.ainvoke(invoke_messages, config)
 
     # Return new messages to be appended to state.
     # Also clear the validation error since we are trying again.

@@ -52,7 +52,7 @@ def memory_manager(state: AgentState, config: dict):
     
     # We want to keep at most 10 messages (plus system prompt if any)
     if len(messages) <= 10:
-        return {}
+        return {"messages": []}
         
     logger.info(f"Context window exceeded 10 messages. Evicting {len(messages) - 10} oldest messages.")
     

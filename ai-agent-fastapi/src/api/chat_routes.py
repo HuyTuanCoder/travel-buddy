@@ -33,7 +33,6 @@ async def chat_endpoint(
     We leverage the Spring API Gateway injected headers for distributed tracing/auth.
     """
     # .delay() pushes this to RabbitMQ instantly
-    print('broker_url:', process_chat_message.app.conf.broker_url, flush=True)
     process_chat_message.delay(
         trip_id=request.trip_id,
         message=request.message,
@@ -58,22 +57,72 @@ async def approve_endpoint(
     )
     return {"status": "accepted", "message": "Approval task queued for processing."}
 
+@router.get("/chat/{trip_id}/history")
+async def chat_history(trip_id: str):
+    """
+    Fetches the conversation history for a given trip from the LangGraph checkpointer.
+    """
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from src.core.database import DATABASE_URL
+    
+    conn_string = DATABASE_URL.replace("+asyncpg", "")
+    async with AsyncPostgresSaver.from_conn_string(conn_string) as checkpointer:
+        config = {"configurable": {"thread_id": trip_id}}
+        state_tuple = await checkpointer.aget_tuple(config)
+        
+        if not state_tuple or not state_tuple.checkpoint:
+            return {"messages": []}
+            
+        messages = state_tuple.checkpoint["channel_values"].get("messages", [])
+        
+        # Format the Langchain messages for the frontend
+        formatted_history = []
+        for msg in messages:
+            if msg.type == "human":
+                formatted_history.append({"id": msg.id, "role": "user", "content": str(msg.content)})
+            elif msg.type == "ai":
+                # Filter out empty AI messages that might just be tool calls
+                if msg.content:
+                    formatted_history.append({"id": msg.id, "role": "agent", "content": str(msg.content)})
+                
+        return {"messages": formatted_history}
+
+# Server-side timeout for SSE streams (seconds)
+SSE_TIMEOUT = 120
+SSE_HEARTBEAT_INTERVAL = 15
+
 @router.get("/chat/{trip_id}/stream")
 async def stream_chat(trip_id: str, request: Request):
     """
     Server-Sent Events (SSE) endpoint to stream real-time updates from Redis Pub/Sub.
-    Because this is standard HTTP GET, Spring Cloud Gateway proxies it natively.
+    Includes a server-side timeout and periodic heartbeat keepalives.
     """
     async def event_generator():
         redis_client = redis.from_url(REDIS_URL)
         pubsub = redis_client.pubsub()
         await pubsub.subscribe(f"stream:{trip_id}")
         
+        import time
+        last_event_time = time.monotonic()
+        last_heartbeat_time = time.monotonic()
+        
         try:
             while True:
                 # Disconnect if client dropped connection (e.g. closed browser)
                 if await request.is_disconnected():
                     break
+                
+                now = time.monotonic()
+                
+                # Server-side timeout: if no real event in SSE_TIMEOUT seconds, send error and close
+                if now - last_event_time > SSE_TIMEOUT:
+                    yield f"data: {json.dumps({'event': 'error', 'data': 'AI processing timed out after {0} seconds. Please try again.'.format(SSE_TIMEOUT)})}\n\n"
+                    break
+                
+                # Heartbeat keepalive every SSE_HEARTBEAT_INTERVAL seconds
+                if now - last_heartbeat_time > SSE_HEARTBEAT_INTERVAL:
+                    yield f": heartbeat\n\n"
+                    last_heartbeat_time = now
                 
                 # Fetch message from redis
                 message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
@@ -82,6 +131,7 @@ async def stream_chat(trip_id: str, request: Request):
                     data = message["data"].decode("utf-8")
                     # Format strictly as SSE: "data: {json}\n\n"
                     yield f"data: {data}\n\n"
+                    last_event_time = now
                     
                 await asyncio.sleep(0.1) # Small sleep to prevent CPU spin
         finally:

@@ -1,4 +1,5 @@
 import api from './api';
+import type { ChatMessage } from '../types/chat';
 
 export const chatService = {
   /**
@@ -18,5 +19,13 @@ export const chatService = {
    */
   approveDraft: async (tripId: string): Promise<void> => {
     await api.post(`/ai/chat/${tripId}/approve`);
+  },
+
+  /**
+   * Fetches the entire conversation history from the backend graph state.
+   */
+  getChatHistory: async (tripId: string): Promise<{ messages: ChatMessage[] }> => {
+    const response = await api.get(`/ai/chat/${tripId}/history`);
+    return response.data;
   }
 };

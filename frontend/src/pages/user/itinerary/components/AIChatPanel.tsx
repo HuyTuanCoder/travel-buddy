@@ -4,13 +4,14 @@ import remarkGfm from 'remark-gfm';
 import { Send, Bot, User, Check, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useAIChat } from '../hooks/useAIChat';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 
 interface AIChatPanelProps {
   tripId: string;
 }
 
 export default function AIChatPanel({ tripId }: AIChatPanelProps) {
-  const { messages, currentThought, isThinking, sendMessage, approveDraft } = useAIChat(tripId);
+  const { messages, currentThought, isThinking, pendingDraft, sendMessage, approveDraft } = useAIChat(tripId);
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -43,16 +44,53 @@ export default function AIChatPanel({ tripId }: AIChatPanelProps) {
           <Bot className="w-5 h-5 text-emerald-600" />
           <h2 className="font-semibold text-slate-800 tracking-tight">AI Assistant</h2>
         </div>
-        <Button 
-          variant="outline" 
-          size="sm" 
-          className="text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100"
-          onClick={approveDraft}
-          disabled={isThinking || messages.length === 0}
-        >
-          <Check className="w-4 h-4 mr-2" />
-          Approve Draft
-        </Button>
+        
+        {pendingDraft && pendingDraft.length > 0 && (
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="text-emerald-700 border-emerald-200 bg-emerald-50 hover:bg-emerald-100 animate-pulse"
+                disabled={isThinking}
+              >
+                <Check className="w-4 h-4 mr-2" />
+                Review Pending Draft
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Review Itinerary Draft</DialogTitle>
+              </DialogHeader>
+              <div className="py-4 space-y-4">
+                <p className="text-sm text-slate-500">The AI has proposed the following additions to your itinerary:</p>
+                <div className="bg-slate-50 p-4 rounded-lg border border-slate-200 space-y-3">
+                  {pendingDraft.map((stop: any, idx: number) => (
+                    <div key={idx} className="flex flex-col gap-1 pb-3 border-b border-slate-200 last:border-0 last:pb-0">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-slate-800">{stop.place_name}</span>
+                        <span className="text-xs font-medium px-2 py-1 bg-emerald-100 text-emerald-800 rounded-full">Day {stop.day_number}</span>
+                      </div>
+                      <span className="text-sm text-slate-600 truncate">{stop.address}</span>
+                      <span className="text-xs text-slate-500">{stop.description}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex justify-end pt-4 border-t border-slate-100 gap-2">
+                <Button variant="outline">Cancel</Button>
+                <Button 
+                  onClick={approveDraft} 
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  disabled={isThinking}
+                >
+                  <Check className="w-4 h-4 mr-2" />
+                  Approve & Commit
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       {/* Chat History */}

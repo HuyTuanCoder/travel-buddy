@@ -6,9 +6,29 @@ export const useAIChat = (tripId: string) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentThought, setCurrentThought] = useState<string>('');
   const [isThinking, setIsThinking] = useState<boolean>(false);
+  const [pendingDraft, setPendingDraft] = useState<any[] | null>(null);
 
   // Ref to hold EventSource so we can clean it up
   const eventSourceRef = useRef<EventSource | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchHistory = async () => {
+      try {
+        const history = await chatService.getChatHistory(tripId);
+        if (mounted) {
+          setMessages(history.messages);
+        }
+      } catch (err) {
+        console.error("Failed to fetch chat history", err);
+      }
+    };
+    fetchHistory();
+    
+    return () => {
+      mounted = false;
+    };
+  }, [tripId]);
 
   useEffect(() => {
     // We establish the SSE connection when the component mounts
@@ -30,8 +50,7 @@ export const useAIChat = (tripId: string) => {
             break;
 
           case 'token':
-            setIsThinking(false);
-            setCurrentThought(''); // clear thoughts when actual answer starts
+            setIsThinking(true); // Ensure thinking stays true until 'done'
             setMessages((prev) => {
               // Find if we have an ongoing 'agent' streaming message
               const lastMsg = prev[prev.length - 1];
@@ -43,6 +62,38 @@ export const useAIChat = (tripId: string) => {
                 // Create new agent message
                 return [...prev, { id: crypto.randomUUID(), role: 'agent', content: data.content, isStreaming: true }];
               }
+            });
+            break;
+
+          case 'draft_update':
+            try {
+              const draftData = JSON.parse(data.content);
+              setPendingDraft(draftData);
+            } catch (e) {
+              console.error("Failed to parse draft_update", e);
+            }
+            break;
+
+          case 'clear_bubble':
+            // Finalize the current bubble without unlocking the UI
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
+                updated[updated.length - 1].isStreaming = false;
+              }
+              return updated;
+            });
+            break;
+
+          case 'done':
+            setIsThinking(false);
+            setCurrentThought('');
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
+                updated[updated.length - 1].isStreaming = false;
+              }
+              return updated;
             });
             break;
 
@@ -102,6 +153,7 @@ export const useAIChat = (tripId: string) => {
     try {
       await chatService.approveDraft(tripId);
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'agent', content: "Draft successfully committed to your itinerary!" }]);
+      setPendingDraft(null); // Clear draft on success
     } catch (err) {
       console.error("Failed to approve draft", err);
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'agent', content: "**System Error:** Failed to commit draft." }]);
@@ -115,6 +167,7 @@ export const useAIChat = (tripId: string) => {
     messages,
     currentThought,
     isThinking,
+    pendingDraft,
     sendMessage,
     approveDraft
   };

@@ -43,7 +43,7 @@ class Settings(BaseSettings):
 # Instantiate the global settings object
 settings = Settings()
 
-def get_llm(model_name: str = "gemini-1.5-pro", temperature: float = 0) -> ChatVertexAI:
+def get_llm(model_name: str = "gemini-2.5-flash", temperature: float = 0) -> ChatVertexAI:
     """
     Factory function to instantiate the Vertex AI LLM.
     Uses centralized configuration.

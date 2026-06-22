@@ -3,13 +3,16 @@ from qdrant_client.http.models import Distance, VectorParams, PointStruct, Filte
 import uuid
 import os
 import logging
+from urllib.parse import urlparse
 from src.schemas.memory import ExtractedFact
 
 logger = logging.getLogger(__name__)
 
-# We read the Qdrant host from env vars, falling back to localhost for local dev outside Docker
-QDRANT_HOST = os.getenv("QDRANT_HOST", "localhost")
-QDRANT_PORT = int(os.getenv("QDRANT_PORT", 6333))
+# Parse QDRANT_URL (e.g. "http://qdrant:6333") into host and port
+_qdrant_url = os.getenv("QDRANT_URL", "http://localhost:6333")
+_parsed = urlparse(_qdrant_url)
+QDRANT_HOST = _parsed.hostname or "localhost"
+QDRANT_PORT = _parsed.port or 6333
 COLLECTION_NAME = "travel_buddy_memory"
 
 _client = None
@@ -67,9 +70,9 @@ def search_memories(query_vector: list[float], user_id: str, limit: int = 5) -> 
     """
     client = get_qdrant_client()
     
-    search_result = client.search(
+    search_result = client.query_points(
         collection_name=COLLECTION_NAME,
-        query_vector=query_vector,
+        query=query_vector,
         query_filter=Filter(
             must=[
                 FieldCondition(
@@ -81,4 +84,4 @@ def search_memories(query_vector: list[float], user_id: str, limit: int = 5) -> 
         limit=limit
     )
     
-    return [hit.payload for hit in search_result]
+    return [hit.payload for hit in search_result.points]

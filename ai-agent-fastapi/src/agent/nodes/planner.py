@@ -20,13 +20,13 @@ def plan_itinerary(state: AgentState):
     """
     messages = state.get("messages", [])
     if not messages:
-        return {}
+        return {"plan": []}
 
     # Find the latest Human message
     latest_human_msg = next((msg for msg in reversed(messages) if isinstance(msg, HumanMessage)), None)
     if not latest_human_msg:
         # If no human message (e.g. tool result), skip planning.
-        return {}
+        return {"plan": []}
         
     llm = get_llm(temperature=0)
     
@@ -58,15 +58,19 @@ def plan_itinerary(state: AgentState):
     
     try:
         logger.info("Planner Node: Generating CoT checklist...")
-        # We invoke the LLM with the system prompt and the latest user message
-        result = structured_llm.invoke([
-            SystemMessage(content=system_prompt),
-            latest_human_msg
-        ])
+        
+        # Combine system prompt and user message into a single string to avoid Gemini SystemMessage ordering bugs with structured output
+        combined_prompt = f"{system_prompt}\n\nUSER REQUEST:\n{latest_human_msg.content}"
+        
+        # We invoke the LLM with the combined prompt
+        plan_output = structured_llm.invoke(combined_prompt)
+        
+        # Fallback: Sometimes Gemini returns a raw list instead of the Pydantic object
+        steps = plan_output.steps if hasattr(plan_output, 'steps') else plan_output if isinstance(plan_output, list) else []
         
         # Reset retry_count on new plan
         return {
-            "plan": result.steps,
+            "plan": steps,
             "retry_count": 0,
             "critic_feedback": ""
         }

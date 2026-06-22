@@ -14,14 +14,14 @@ def inject_memories(state: AgentState, config: dict):
     """
     messages = state.get("messages", [])
     if not messages:
-        return {}
+        return {"messages": []}
 
     # Get the latest message text
     latest_message = messages[-1]
     
     # We only inject RAG for Human messages, skip if it's a Tool or AI message
     if not isinstance(latest_message, HumanMessage):
-        return {}
+        return {"messages": []}
         
     query_text = latest_message.content
     user_id = config.get("configurable", {}).get("user_id", "default_user")
@@ -54,4 +54,4 @@ def inject_memories(state: AgentState, config: dict):
     except Exception as e:
         logger.error(f"Failed to inject RAG memories: {e}")
         
-    return {}
+    return {"messages": []}

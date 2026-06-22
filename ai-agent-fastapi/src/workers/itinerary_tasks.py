@@ -27,8 +27,8 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
     try:
         # Example data shape: {"event": "status", "data": "Processing..."}
         await redis_client.publish(pubsub_channel, json.dumps({
-            "event": "status",
-            "data": "AI is processing your request..."
+            "type": "thought",
+            "content": "AI is processing your request..."
         }))
 
         conn_string = DATABASE_URL.replace("+asyncpg", "")
@@ -44,32 +44,70 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                 "callbacks": [langfuse_handler]
             }
 
-            # Run graph
-            log.info("Invoking LangGraph")
-            await app_graph.ainvoke(inputs, config=config)
+            # Run graph with true token-by-token streaming
+            log.info("Invoking LangGraph with streaming")
+            current_run_id = None
+            async for event in app_graph.astream_events(inputs, config=config, version="v2"):
+                kind = event["event"]
+                if kind == "on_chat_model_stream":
+                    # If this is a new LLM run, finalize any existing streaming bubble
+                    run_id = event["run_id"]
+                    if current_run_id != run_id:
+                        current_run_id = run_id
+                        await redis_client.publish(pubsub_channel, json.dumps({
+                            "type": "clear_bubble",
+                            "content": ""
+                        }))
+
+                    # Only stream text chunks (tool calls will have empty content here)
+                    content = event["data"]["chunk"].content
+                    if content and isinstance(content, str):
+                        await redis_client.publish(pubsub_channel, json.dumps({
+                            "type": "token",
+                            "content": content
+                        }))
+                elif kind == "on_tool_start":
+                    # Finalize the current streaming text bubble so the next LLM run starts a fresh bubble
+                    await redis_client.publish(pubsub_channel, json.dumps({
+                        "type": "clear_bubble",
+                        "content": ""
+                    }))
+                    
+                    await redis_client.publish(pubsub_channel, json.dumps({
+                        "type": "thought",
+                        "content": f"> Executing action: {event['name']}..."
+                    }))
             
             # Check if paused before a tool execution
             state = await app_graph.aget_state(config)
+            
+            # Broadcast the latest draft to the frontend so the UI stays synced
+            current_draft = state.values.get("itinerary_draft", [])
+            await redis_client.publish(pubsub_channel, json.dumps({
+                "type": "draft_update",
+                "content": json.dumps(current_draft)
+            }))
             
             if state.next and "tools" in state.next:
                 last_msg = state.values["messages"][-1]
                 # Convert tool calls to dict format for the frontend
                 await redis_client.publish(pubsub_channel, json.dumps({
-                    "event": "requires_approval",
-                    "data": last_msg.tool_calls
+                    "type": "tool_call",
+                    "content": json.dumps([{
+                        "name": tool_call.get("name"),
+                        "args": tool_call.get("args")
+                    } for tool_call in getattr(last_msg, "tool_calls", [])])
                 }))
             else:
-                ai_response = state.values["messages"][-1].content
-                await redis_client.publish(pubsub_channel, json.dumps({
-                    "event": "completed",
-                    "data": ai_response
-                }))
-                log.info("Chat task completed successfully")
+                # Execution completely finished (e.g. Critic approved)
+                await redis_client.publish(pubsub_channel, json.dumps({"type": "done", "content": ""}))
+            
+            log.info("Chat task completed successfully")
     except Exception as e:
         log.error("Chat task failed", exc_info=True)
         await redis_client.publish(pubsub_channel, json.dumps({
-            "event": "error",
-            "data": f"Task Failed: {str(e)}"
+            "type": "error",
+            "content": f"Task Failed: {str(e)}"
         }))
     finally:
         await redis_client.close()
@@ -83,8 +121,8 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
     
     try:
         await redis_client.publish(pubsub_channel, json.dumps({
-            "event": "status",
-            "data": "Executing approved changes via Java gRPC..."
+            "type": "thought",
+            "content": "Executing approved changes via Java gRPC..."
         }))
 
         conn_string = DATABASE_URL.replace("+asyncpg", "")
@@ -109,30 +147,68 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
                 return
 
             # Resume the graph by passing None as input
-            log.info("Resuming LangGraph execution")
-            await app_graph.ainvoke(None, config=config)
-            
-            # Check state again to see if it finished or hit another tool interrupt
+            log.info("Resuming LangGraph execution with streaming")
+            current_run_id = None
+            async for event in app_graph.astream_events(None, config=config, version="v2"):
+                kind = event["event"]
+                if kind == "on_chat_model_stream":
+                    run_id = event["run_id"]
+                    if current_run_id != run_id:
+                        current_run_id = run_id
+                        await redis_client.publish(pubsub_channel, json.dumps({
+                            "type": "clear_bubble",
+                            "content": ""
+                        }))
+                        
+                    content = event["data"]["chunk"].content
+                    if content and isinstance(content, str):
+                        await redis_client.publish(pubsub_channel, json.dumps({
+                            "type": "token",
+                            "content": content
+                        }))
+                elif kind == "on_tool_start":
+                    await redis_client.publish(pubsub_channel, json.dumps({
+                        "type": "clear_bubble",
+                        "content": ""
+                    }))
+                    
+                    await redis_client.publish(pubsub_channel, json.dumps({
+                        "type": "thought",
+                        "content": f"> Executing action: {event['name']}..."
+                    }))
+
+            # Check if paused again (e.g. multi-step tool calls)
             new_state = await app_graph.aget_state(config)
+            
+            # Broadcast the latest draft to the frontend so the UI stays synced
+            current_draft = new_state.values.get("itinerary_draft", [])
+            await redis_client.publish(pubsub_channel, json.dumps({
+                "type": "draft_update",
+                "content": json.dumps(current_draft)
+            }))
             
             if new_state.next and "tools" in new_state.next:
                 last_msg = new_state.values["messages"][-1]
                 await redis_client.publish(pubsub_channel, json.dumps({
-                    "event": "requires_approval",
-                    "data": last_msg.tool_calls
+                    "type": "tool_call",
+                    "content": json.dumps([{
+                        "name": tool_call.get("name"),
+                        "args": tool_call.get("args")
+                    } for tool_call in getattr(last_msg, "tool_calls", [])])
                 }))
             else:
-                ai_response = new_state.values["messages"][-1].content
+                # Execution completely finished (e.g. Critic approved)
                 await redis_client.publish(pubsub_channel, json.dumps({
-                    "event": "completed",
-                    "data": ai_response
+                    "type": "done",
+                    "content": ""
                 }))
-                log.info("Tool approval task completed successfully")
+            
+            log.info("Tool approval task completed successfully")
     except Exception as e:
         log.error("Tool approval task failed", exc_info=True)
         await redis_client.publish(pubsub_channel, json.dumps({
-            "event": "error",
-            "data": f"Task Failed: {str(e)}"
+            "type": "error",
+            "content": f"Task Failed: {str(e)}"
         }))
     finally:
         await redis_client.close()
