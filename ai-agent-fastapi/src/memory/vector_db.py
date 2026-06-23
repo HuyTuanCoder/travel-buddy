@@ -85,3 +85,26 @@ def search_memories(query_vector: list[float], user_id: str, limit: int = 5) -> 
     )
     
     return [hit.payload for hit in search_result.points]
+
+def get_all_facts(user_id: str) -> list[dict]:
+    """
+    Retrieves all current facts for a user to be passed as context for Delta Extraction.
+    """
+    client = get_qdrant_client()
+    
+    result, _ = client.scroll(
+        collection_name=COLLECTION_NAME,
+        scroll_filter=Filter(
+            must=[
+                FieldCondition(
+                    key="user_id",
+                    match=MatchValue(value=user_id)
+                )
+            ]
+        ),
+        limit=100,
+        with_payload=True,
+        with_vectors=False
+    )
+    
+    return [point.payload for point in result]

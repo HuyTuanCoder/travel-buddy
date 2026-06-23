@@ -98,6 +98,16 @@ def evaluate_itinerary(state: AgentState, config: dict):
         else:
             logger.warning(f"Critic Node: REJECTED. Feedback: {feedback}")
             
+            if thread_id:
+                try:
+                    r = redis.from_url(settings.REDIS_URL)
+                    r.publish(f"stream:{thread_id}", json.dumps({
+                        "type": "thought",
+                        "content": f"\n\n> Critic Rejected Itinerary:\n> {feedback}\n"
+                    }))
+                except Exception as e:
+                    logger.error(f"Failed to publish thought: {e}")
+            
             # --- THE INTRA-TURN STATE COLLAPSER ---
             # If the critic rejects, we do NOT want to append this entire failure trace 
             # to the LangGraph state. It will bloat the context window.

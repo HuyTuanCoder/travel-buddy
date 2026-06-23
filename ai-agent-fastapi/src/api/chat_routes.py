@@ -22,6 +22,9 @@ class ChatRequest(BaseModel):
 class ApproveRequest(BaseModel):
     trip_id: str
 
+class FinalizeRequest(BaseModel):
+    trip_id: str
+
 @router.post("/chat", status_code=202)
 async def chat_endpoint(
     request: ChatRequest,
@@ -56,6 +59,34 @@ async def approve_endpoint(
         correlation_id=x_correlation_id or "none"
     )
     return {"status": "accepted", "message": "Approval task queued for processing."}
+
+@router.post("/chat/finalize", status_code=202)
+async def finalize_endpoint(
+    request: FinalizeRequest,
+    x_user_id: Optional[str] = Header(None),
+    x_correlation_id: Optional[str] = Header(None)
+):
+    """
+    Called when the user navigates away from the trip view.
+    Forces an immediate background extraction of the unevicted chat history for this trip.
+    """
+    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
+    from src.core.database import DATABASE_URL
+    from src.workers.memory_tasks import process_evicted_memory
+    
+    conn_string = DATABASE_URL.replace("+asyncpg", "")
+    async with AsyncPostgresSaver.from_conn_string(conn_string) as checkpointer:
+        config = {"configurable": {"thread_id": request.trip_id}}
+        state_tuple = await checkpointer.aget_tuple(config)
+        
+        if state_tuple and state_tuple.checkpoint:
+            messages = state_tuple.checkpoint["channel_values"].get("messages", [])
+            texts_to_extract = [msg.content for msg in messages if isinstance(msg.content, str)]
+            user_id = x_user_id or "anonymous"
+            if texts_to_extract:
+                process_evicted_memory.delay(texts_to_extract, user_id, request.trip_id)
+                
+    return {"status": "accepted", "message": "Finalize extraction queued."}
 
 @router.get("/chat/{trip_id}/history")
 async def chat_history(trip_id: str):

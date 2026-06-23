@@ -102,7 +102,6 @@ export const useAIChat = (tripId: string) => {
             }
             break;
 
-          case 'clear_bubble':
           case 'done':
             // Instantly flush the remaining buffer to the screen
             if (streamBufferRef.current.length > 0) {

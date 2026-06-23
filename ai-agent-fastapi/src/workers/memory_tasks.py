@@ -2,22 +2,25 @@ from celery import shared_task
 import logging
 import asyncio
 from src.memory.extractor import extract_from_messages
-from src.memory.vector_db import upsert_fact
+from src.memory.vector_db import upsert_fact, get_all_facts
 from src.memory.embeddings import embed_text
 
 logger = logging.getLogger(__name__)
 
 async def _process_evicted_memory(messages: list[str], user_id: str, trip_id: str):
     """
-    Async implementation of the memory eviction process.
+    Async implementation of the Delta Extraction memory process.
     """
     try:
         logger.info(f"Processing {len(messages)} evicted messages for memory extraction...")
         
-        # 1. Extract facts (hybrid spaCy/Gemini pipeline)
-        facts = extract_from_messages(messages)
+        # 1. Delta Extraction: Fetch current facts to maintain context
+        current_facts = get_all_facts(user_id)
         
-        # 2. Embed and Upsert each fact
+        # 2. Extract facts via Pure LLM Pipeline
+        facts = extract_from_messages(messages, current_facts=current_facts)
+        
+        # 3. Embed and Upsert each fact
         for fact in facts:
             # Embed the raw quote for semantic search later
             vector = embed_text(fact.raw_quote)

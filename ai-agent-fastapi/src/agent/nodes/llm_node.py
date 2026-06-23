@@ -51,35 +51,38 @@ async def call_gemini(state: AgentState, config: dict):
             except Exception as e:
                 logger.error(f"Agent Node failed to parse draft tool output: {e}")
     
-    # Construct a dynamic System Prompt for execution
-    execution_context = "You are an AI Travel Agent Executor.\n"
+    # Construct a static System Prompt for identity
+    sys_msg = SystemMessage(content="You are an AI Travel Agent Executor.")
     
-    if itinerary_draft:
-        execution_context += f"\nYOUR CURRENT ITINERARY DRAFT (In Memory):\n{json.dumps(itinerary_draft, indent=2)}\n"
+    # Construct an ephemeral context injection for the BOTTOM of the prompt
+    ephemeral_context = "\n--- SYSTEM EXECUTION CONTEXT ---\n"
     
-    if plan:
-        execution_context += "\nYOUR MANDATORY PLAN (Execute these steps strictly):\n"
-        for i, step in enumerate(plan):
-            execution_context += f"{i+1}. {step}\n"
-            
-    if critic_feedback:
-        execution_context += f"\nCRITICAL ERROR FROM CRITIC:\n{critic_feedback}\nYou MUST fix this immediately.\n"
-        
-    if validation_error:
-        execution_context += f"\nTOOL VALIDATION ERROR:\n{validation_error}\nYou MUST fix your JSON schema.\n"
-        
     rag_context = state.get("rag_context", "")
     if rag_context:
-        execution_context += f"\nKNOWN CONSTRAINTS & MEMORIES:\n{rag_context}\n"
+        ephemeral_context += f"\nKNOWN CONSTRAINTS & MEMORIES:\n{rag_context}\n"
         
-    # Inject the execution context as a single SystemMessage
-    sys_msg = SystemMessage(content=execution_context)
+    if itinerary_draft:
+        ephemeral_context += f"\nYOUR CURRENT ITINERARY DRAFT (In Memory):\n{json.dumps(itinerary_draft, indent=2)}\n"
     
+    if plan:
+        ephemeral_context += "\nYOUR MANDATORY PLAN (Execute these steps strictly. NEVER draft more than 3-5 stops at a time):\n"
+        for i, step in enumerate(plan):
+            ephemeral_context += f"{i+1}. {step}\n"
+            
+    if critic_feedback:
+        ephemeral_context += f"\nCRITICAL ERROR FROM CRITIC:\n{critic_feedback}\nYou MUST fix this immediately.\n"
+        
+    if validation_error:
+        ephemeral_context += f"\nTOOL VALIDATION ERROR:\n{validation_error}\nYou MUST fix your JSON schema.\n"
+    
+    ephemeral_context += "\nRead the chat history above, then execute the next step of your plan based on the constraints."
+        
     # Filter out any other SystemMessages (like from RAG) to prevent Gemini crashes
-    # Gemini requires exactly one SystemMessage, strictly at the beginning of the history.
     filtered_history = [msg for msg in messages if not isinstance(msg, SystemMessage)]
     
-    invoke_messages = [sys_msg] + filtered_history
+    # Append the ephemeral context as a final HumanMessage to defeat "Lost in the Middle"
+    from langchain_core.messages import HumanMessage
+    invoke_messages = [sys_msg] + filtered_history + [HumanMessage(content=ephemeral_context)]
 
     logger.info("Agent Node: Executing next step...")
     # pass to llm using ainvoke so LangGraph can stream chunks

@@ -10,6 +10,7 @@ from src.agent.nodes.validator import validate_tool_call
 from src.agent.nodes.rag_injector import inject_memories
 from src.agent.nodes.planner import plan_itinerary
 from src.agent.nodes.critic import evaluate_itinerary
+from src.agent.nodes.reflection import reflection_node
 from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
 from src.agent.tools.draft import draft_add_stop, draft_remove_stop
@@ -47,28 +48,55 @@ def route_from_critic(state: AgentState):
         
     return "memory_manager" # Approved final text. Safe to process memory and end.
 
+# custom router to check if auto_tools returned an empty/error result
+def route_after_auto_tools(state: AgentState):
+    messages = state.get("messages", [])
+    if not messages:
+        return "agent"
+    
+    last_message = messages[-1]
+    if last_message.type == "tool":
+        content = str(last_message.content).strip()
+        # Trigger reflection if the tool returned an empty array, empty string, or an explicit Error
+        if not content or content == "[]" or content.startswith("Error:"):
+            return "reflection"
+            
+    return "agent"
+
 def memory_manager(state: AgentState, config: dict):
     """
     Tier 1 Context Window Manager.
-    If the context window grows beyond 10 messages, we evict the oldest messages
-    (excluding the System message) and send them to the Tier 2 Celery task for extraction.
+    Evicts oldest messages based on Token Count to prevent parallel tool calls from wiping history.
     """
     messages = state.get("messages", [])
     
-    # We want to keep at most 10 messages (plus system prompt if any)
-    if len(messages) <= 10:
+    # 1 token ~= 4 chars roughly
+    total_chars = sum(len(str(msg.content)) for msg in messages if msg.content)
+    estimated_tokens = total_chars // 4
+    
+    if estimated_tokens <= 4000:
         return {"messages": []}
         
-    logger.info(f"Context window exceeded 10 messages. Evicting {len(messages) - 10} oldest messages.")
+    logger.info(f"Context window exceeded 4000 tokens (est: {estimated_tokens}). Sweeping older messages.")
     
-    # Identify messages to drop (skip index 0 if it's a SystemMessage)
+    # Keep the system prompt (index 0) and the most recent ~2000 tokens
     start_idx = 1 if messages[0].type == "system" else 0
-    num_to_drop = len(messages) - 10
     
+    # Find how many messages to drop from the front to bring tokens down
+    chars_to_drop = (estimated_tokens - 2000) * 4
+    dropped_chars = 0
+    num_to_drop = 0
+    
+    for i in range(start_idx, len(messages)):
+        if dropped_chars >= chars_to_drop:
+            break
+        dropped_chars += len(str(messages[i].content)) if messages[i].content else 0
+        num_to_drop += 1
+        
     messages_to_drop = messages[start_idx : start_idx + num_to_drop]
     drop_commands = [RemoveMessage(id=msg.id) for msg in messages_to_drop if msg.id]
     
-    # Send texts to Celery for Tier 2 Extraction
+    # Send texts to Celery for Tier 2 Delta Extraction
     texts_to_extract = [msg.content for msg in messages_to_drop if isinstance(msg.content, str)]
     
     user_id = config.get("configurable", {}).get("user_id", "default_user")
@@ -97,6 +125,7 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     ]))
     builder.add_node("validator", validate_tool_call)
     builder.add_node("critic", evaluate_itinerary)
+    builder.add_node("reflection", reflection_node)
     builder.add_node("memory_manager", memory_manager)
 
     # draw the entry edge -> goes to RAG injector first
@@ -117,7 +146,10 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     
     # after tools finish executing, we go back to the agent to summarize or use more tools
     builder.add_edge("commit_tools", "agent")
-    builder.add_edge("auto_tools", "agent")
+    
+    # route from auto_tools conditionally to reflection on failure
+    builder.add_conditional_edges("auto_tools", route_after_auto_tools)
+    builder.add_edge("reflection", "agent")
     
     # memory manager always ends
     builder.add_edge("memory_manager", END)

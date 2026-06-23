@@ -50,14 +50,10 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
             async for event in app_graph.astream_events(inputs, config=config, version="v2"):
                 kind = event["event"]
                 if kind == "on_chat_model_stream":
-                    # If this is a new LLM run, finalize any existing streaming bubble
                     run_id = event["run_id"]
+                    # We NO LONGER clear the bubble here. The LLM text streams into the same continuous bubble.
                     if current_run_id != run_id:
                         current_run_id = run_id
-                        await redis_client.publish(pubsub_channel, json.dumps({
-                            "type": "clear_bubble",
-                            "content": ""
-                        }))
 
                     # Only stream text chunks (tool calls will have empty content here)
                     content = event["data"]["chunk"].content
@@ -67,15 +63,11 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                             "content": content
                         }))
                 elif kind == "on_tool_start":
-                    # Finalize the current streaming text bubble so the next LLM run starts a fresh bubble
-                    await redis_client.publish(pubsub_channel, json.dumps({
-                        "type": "clear_bubble",
-                        "content": ""
-                    }))
-                    
+                    # Instead of clearing the bubble, we prepend newlines so the tool log appears
+                    # inside the exact same chat bubble as the preceding text.
                     await redis_client.publish(pubsub_channel, json.dumps({
                         "type": "thought",
-                        "content": f"> Executing action: {event['name']}..."
+                        "content": f"\n\n> Executing action: {event['name']}...\n"
                     }))
             
             # Check if paused before a tool execution
@@ -153,12 +145,9 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
                 kind = event["event"]
                 if kind == "on_chat_model_stream":
                     run_id = event["run_id"]
+                    # We NO LONGER clear the bubble here. The LLM text streams into the same continuous bubble.
                     if current_run_id != run_id:
                         current_run_id = run_id
-                        await redis_client.publish(pubsub_channel, json.dumps({
-                            "type": "clear_bubble",
-                            "content": ""
-                        }))
                         
                     content = event["data"]["chunk"].content
                     if content and isinstance(content, str):
@@ -167,14 +156,10 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
                             "content": content
                         }))
                 elif kind == "on_tool_start":
-                    await redis_client.publish(pubsub_channel, json.dumps({
-                        "type": "clear_bubble",
-                        "content": ""
-                    }))
-                    
+                    # Prepend newlines so tool logs stay in the same bubble
                     await redis_client.publish(pubsub_channel, json.dumps({
                         "type": "thought",
-                        "content": f"> Executing action: {event['name']}..."
+                        "content": f"\n\n> System executing action: {event['name']}...\n"
                     }))
 
             # Check if paused again (e.g. multi-step tool calls)
