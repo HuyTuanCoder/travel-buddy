@@ -1,7 +1,8 @@
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue
+from qdrant_client.http.models import Distance, VectorParams, PointStruct, Filter, FieldCondition, MatchValue, Range
 import uuid
 import os
+import time
 import logging
 from urllib.parse import urlparse
 from src.schemas.memory import ExtractedFact
@@ -64,22 +65,33 @@ def upsert_fact(fact: ExtractedFact, user_id: str, trip_id: str, vector: list[fl
     )
     logger.info(f"Upserted fact {fact.category.value} into Qdrant point {point_id}")
 
-def search_memories(query_vector: list[float], user_id: str, limit: int = 5) -> list[dict]:
+def search_memories(query_vector: list[float], user_id: str, limit: int = 5, time_range_days: int = None) -> list[dict]:
     """
-    Performs pure semantic text embedding search across unstructured memories.
+    Performs pure semantic text embedding search across unstructured memories, with optional temporal range filtering.
     """
     client = get_qdrant_client()
+    
+    must_conditions = [
+        FieldCondition(
+            key="user_id",
+            match=MatchValue(value=user_id)
+        )
+    ]
+    
+    if time_range_days is not None and time_range_days > 0:
+        cutoff_time = time.time() - (time_range_days * 86400)
+        must_conditions.append(
+            FieldCondition(
+                key="timestamp",
+                range=Range(gte=cutoff_time)
+            )
+        )
     
     search_result = client.query_points(
         collection_name=COLLECTION_NAME,
         query=query_vector,
         query_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="user_id",
-                    match=MatchValue(value=user_id)
-                )
-            ]
+            must=must_conditions
         ),
         limit=limit
     )

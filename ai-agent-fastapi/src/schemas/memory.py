@@ -18,4 +18,5 @@ class ExtractedFact(BaseModel):
     topic: str = Field(description="The specific topic or entity, e.g. 'Sushi' or 'Paris'.")
     sentiment: str = Field(description="The user's sentiment regarding this topic, e.g. 'NEGATIVE', 'POSITIVE', 'NEUTRAL'.")
     permanence: PermanenceLevel = Field(description="Whether this is a permanent constraint or a temporary preference.")
+    timestamp: float = Field(default_factory=lambda: __import__('time').time(), description="UTC timestamp of when this memory was extracted/updated.")
     raw_quote: str = Field(description="The exact words the user used.")

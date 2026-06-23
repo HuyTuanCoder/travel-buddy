@@ -1,10 +1,12 @@
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, RemoveMessage, ToolMessage, AIMessage
 import structlog
+import asyncio
 import os
 
 from src.schemas.agent import AgentState
 from src.core.config import get_llm
+from src.core.telemetry import publish_thought
 
 logger = structlog.get_logger(__name__)
 
@@ -22,20 +24,11 @@ def evaluate_itinerary(state: AgentState, config: dict):
     Evaluates the agent's work. If it fails, it violently loops back to the agent.
     Also implements the Intra-Turn State Collapser to prevent OOM errors.
     """
-    import redis
-    import json
-    from src.core.config import settings
-    
     thread_id = config.get("configurable", {}).get("thread_id", "")
     if thread_id:
-        try:
-            r = redis.from_url(settings.REDIS_URL)
-            r.publish(f"stream:{thread_id}", json.dumps({
-                "type": "thought",
-                "content": "Critic evaluating proposed itinerary against constraints..."
-            }))
-        except Exception as e:
-            logger.error(f"Failed to publish thought: {e}")
+        asyncio.get_event_loop().run_until_complete(
+            publish_thought(f"stream:{thread_id}", "Critic evaluating proposed itinerary against constraints...")
+        )
 
     messages = state.get("messages", [])
     retry_count = state.get("retry_count", 0)
@@ -99,14 +92,9 @@ def evaluate_itinerary(state: AgentState, config: dict):
             logger.warning(f"Critic Node: REJECTED. Feedback: {feedback}")
             
             if thread_id:
-                try:
-                    r = redis.from_url(settings.REDIS_URL)
-                    r.publish(f"stream:{thread_id}", json.dumps({
-                        "type": "thought",
-                        "content": f"\n\n> Critic Rejected Itinerary:\n> {feedback}\n"
-                    }))
-                except Exception as e:
-                    logger.error(f"Failed to publish thought: {e}")
+                asyncio.get_event_loop().run_until_complete(
+                    publish_thought(f"stream:{thread_id}", f"\n\n> Critic Rejected Itinerary:\n> {feedback}\n")
+                )
             
             # --- THE INTRA-TURN STATE COLLAPSER ---
             # If the critic rejects, we do NOT want to append this entire failure trace 

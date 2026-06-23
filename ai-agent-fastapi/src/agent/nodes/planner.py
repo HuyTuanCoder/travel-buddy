@@ -1,10 +1,12 @@
 from pydantic import BaseModel, Field
 from langchain_core.messages import SystemMessage, HumanMessage
 import structlog
+import asyncio
 import os
 
 from src.schemas.agent import AgentState
 from src.core.config import get_llm
+from src.core.telemetry import publish_thought
 
 logger = structlog.get_logger(__name__)
 
@@ -18,30 +20,27 @@ def plan_itinerary(state: AgentState, config: dict):
     Gate 1: The Planner Node.
     Forces the AI to generate a strict reasoning trace before executing tools.
     """
-    import redis
-    import json
-    from src.core.config import settings
-    
     thread_id = config.get("configurable", {}).get("thread_id", "")
     if thread_id:
-        try:
-            r = redis.from_url(settings.REDIS_URL)
-            r.publish(f"stream:{thread_id}", json.dumps({
-                "type": "thought",
-                "content": "Analyzing request constraints and building step-by-step checklist..."
-            }))
-        except Exception as e:
-            logger.error(f"Failed to publish thought: {e}")
+        asyncio.get_event_loop().run_until_complete(
+            publish_thought(f"stream:{thread_id}", "Analyzing request constraints and building step-by-step checklist...")
+        )
 
     messages = state.get("messages", [])
     if not messages:
         return {"plan": []}
 
-    # Find the latest Human message
+    # Compile a brief transcript of the most recent messages for context
+    recent_messages = messages[-6:] if len(messages) > 6 else messages
+    transcript = ""
+    for msg in recent_messages:
+        role = "USER" if isinstance(msg, HumanMessage) else "AGENT"
+        if msg.content and isinstance(msg.content, str):
+            transcript += f"{role}: {msg.content}\n"
+            
+    # Find the latest Human message to emphasize the immediate request
     latest_human_msg = next((msg for msg in reversed(messages) if isinstance(msg, HumanMessage)), None)
-    if not latest_human_msg:
-        # If no human message (e.g. tool result), skip planning.
-        return {"plan": []}
+    latest_request = latest_human_msg.content if latest_human_msg else "Continue execution."
         
     llm = get_llm(temperature=0)
     
@@ -69,6 +68,7 @@ def plan_itinerary(state: AgentState, config: dict):
     3. REAL-TIME DISCOVERY: Actively encourage the agent to use `search_web` to discover "what is currently popular" or "hidden gems".
     4. PARALLEL EXECUTION (AVOID CRASHES): The Agent MUST execute tools simultaneously whenever possible. If you need to find 5 places, instruct the Agent to call `find_and_register_place` 5 times in a single JSON payload.
     5. CONVERSATIONAL PUSHBACK (HARD LIMIT): Never instruct the Agent to draft an entire multi-day trip at once. It will crash the system. Instruct the Agent: "Never draft more than 3 to 5 stops (1 day) at a time. Once you hit this limit, you MUST stop execution, present the draft, and ask the user to check the itinerary panel for approval."
+    6. LONG-TERM MEMORY (AGENTIC RAG): If the user refers to past conversations, past preferences, or says things like 'remember what I told you', you MUST instruct the agent to use the `search_past_conversations` tool. If this tool returns no results, DO NOT guess or hallucinate. Instruct the agent to apologize to the user and ask them to remind you what they said.
     
     Do NOT execute the actions. Just write the checklist.
     Example Vague: ["Push back and ask user for trip duration, budget, and preferences"]
@@ -78,8 +78,8 @@ def plan_itinerary(state: AgentState, config: dict):
     try:
         logger.info("Planner Node: Generating CoT checklist...")
         
-        # Combine system prompt and user message into a single string to avoid Gemini SystemMessage ordering bugs with structured output
-        combined_prompt = f"{system_prompt}\n\nUSER REQUEST:\n{latest_human_msg.content}"
+        # Combine system prompt, recent transcript, and immediate request into a single string to avoid Gemini SystemMessage ordering bugs
+        combined_prompt = f"{system_prompt}\n\nRECENT CHAT HISTORY:\n{transcript}\n\nIMMEDIATE USER REQUEST:\n{latest_request}"
 
         
         # We invoke the LLM with the combined prompt
@@ -94,15 +94,10 @@ def plan_itinerary(state: AgentState, config: dict):
             steps = []
             
         if thread_id and steps:
-            try:
-                formatted_steps = "\n> ".join(steps)
-                r = redis.from_url(settings.REDIS_URL)
-                r.publish(f"stream:{thread_id}", json.dumps({
-                    "type": "thought",
-                    "content": f"\n\n> Created Execution Plan:\n> {formatted_steps}\n"
-                }))
-            except Exception as e:
-                logger.error(f"Failed to publish thought: {e}")
+            formatted_steps = "\n> ".join(steps)
+            asyncio.get_event_loop().run_until_complete(
+                publish_thought(f"stream:{thread_id}", f"\n\n> Created Execution Plan:\n> {formatted_steps}\n")
+            )
         
         # Reset retry_count on new plan
         return {

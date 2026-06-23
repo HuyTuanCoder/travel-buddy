@@ -15,6 +15,7 @@ from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_s
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
 from src.agent.tools.draft import draft_add_stop, draft_remove_stop
 from src.workers.memory_tasks import process_evicted_memory
+from src.core.telemetry import publish_thought
 
 logger = logging.getLogger(__name__)
 
@@ -103,6 +104,12 @@ def memory_manager(state: AgentState, config: dict):
     trip_id = config.get("configurable", {}).get("thread_id", "default_trip")
     
     if texts_to_extract:
+        if trip_id != "default_trip":
+            import asyncio
+            asyncio.get_event_loop().run_until_complete(
+                publish_thought(f"stream:{trip_id}", f"\n\n> Archiving {len(texts_to_extract)} old messages to Long-Term Memory...\n")
+            )
+                
         # Fire and forget async Celery task
         process_evicted_memory.delay(texts_to_extract, user_id, trip_id)
         
