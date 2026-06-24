@@ -22,10 +22,16 @@ def inject_memories(state: AgentState, config: dict):
     latest_message = messages[-1]
     
     # We only inject RAG for Human messages, skip if it's a Tool or AI message
-    if not isinstance(latest_message, HumanMessage):
-        return {"messages": []}
+    if not isinstance(messages[-1], HumanMessage):
+        return {"rag_context": state.get("rag_context", "")} # preserve existing
         
-    query_text = latest_message.content
+    # MUTE PROTOCOL: If the user legitimately reset the context, do not inject old facts!
+    if state.get("intent") == "TRAVEL_PLANNING_RESET":
+        logger.info("RAG Injector muted due to TRAVEL_PLANNING_RESET intent.")
+        return {"rag_context": ""}
+        
+    from src.agent.utils import get_conversational_transcript
+    query_text = get_conversational_transcript(messages, turns=3)
     user_id = config.get("configurable", {}).get("user_id", "default_user")
     thread_id = config.get("configurable", {}).get("thread_id", "")
 

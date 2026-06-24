@@ -30,14 +30,8 @@ def plan_itinerary(state: AgentState, config: dict):
     if not messages:
         return {"plan": []}
 
-    # Compile a brief transcript of the most recent messages for context
-    recent_messages = messages[-6:] if len(messages) > 6 else messages
-    transcript = ""
-    for msg in recent_messages:
-        role = "USER" if isinstance(msg, HumanMessage) else "AGENT"
-        if msg.content and isinstance(msg.content, str):
-            transcript += f"{role}: {msg.content}\n"
-            
+    from src.agent.utils import get_conversational_transcript
+    transcript = get_conversational_transcript(messages, turns=6)
     # Find the latest Human message to emphasize the immediate request
     latest_human_msg = next((msg for msg in reversed(messages) if isinstance(msg, HumanMessage)), None)
     latest_request = latest_human_msg.content if latest_human_msg else "Continue execution."
@@ -59,12 +53,25 @@ def plan_itinerary(state: AgentState, config: dict):
     Known Constraints & Memories:
     {rag_context}
     
+    PREVIOUS EVENTS (Summary of dropped messages):
+    {state.get("running_summary", "")}
+    
     CURRENT ITINERARY DRAFT:
     {draft_context}
     
     CRITICAL PLANNING RULES:
     1. VAGUE REQUESTS: If the user simply says "Plan a trip to X" with no dates, budget, or preferences, DO NOT generate a plan to build the itinerary. Instead, output a plan to: "Ask the user clarifying questions about dates, budget, and dietary preferences."
-    2. THE DRAFT STATE: The Agent maintains an in-memory `itinerary_draft`. You must instruct the agent to build the trip incrementally into this draft. Do NOT instruct the agent to call database tools (`add_stop`) until the user explicitly says "Build this" or "I approve the draft".
+    2. PARALLEL EXECUTION: If you need to find multiple places, command the agent to use `find_and_register_place` multiple times in parallel, then command it to use `draft_add_stop` multiple times in parallel.
+    
+    1-SHOT EXAMPLE OF A PERFECT PLAN:
+    User Request: "Let's plan day 1 in Paris. I want to visit the Louvre, get some sushi, and then see the Eiffel Tower."
+    Output:
+    [
+      "Check RAG constraints to see if the user has a budget or specific sushi preference.",
+      "Call find_and_register_place 3 times in parallel for 'The Louvre Paris', 'Best Sushi near Louvre Paris', and 'Eiffel Tower Paris'.",
+      "Call draft_add_stop 3 times in parallel to add the registered locations to Day 1, ensuring the times are sequential (Morning -> Lunch -> Afternoon)."
+    ]
+    
     3. REAL-TIME DISCOVERY: Actively encourage the agent to use `search_web` to discover "what is currently popular" or "hidden gems".
     4. PARALLEL EXECUTION (AVOID CRASHES): The Agent MUST execute tools simultaneously whenever possible. If you need to find 5 places, instruct the Agent to call `find_and_register_place` 5 times in a single JSON payload.
     5. CONVERSATIONAL PUSHBACK (HARD LIMIT): Never instruct the Agent to draft an entire multi-day trip at once. It will crash the system. Instruct the Agent: "Never draft more than 3 to 5 stops (1 day) at a time. Once you hit this limit, you MUST stop execution, present the draft, and ask the user to check the itinerary panel for approval."

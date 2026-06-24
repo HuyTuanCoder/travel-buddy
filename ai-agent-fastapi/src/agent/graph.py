@@ -11,6 +11,8 @@ from src.agent.nodes.rag_injector import inject_memories
 from src.agent.nodes.planner import plan_itinerary
 from src.agent.nodes.critic import evaluate_itinerary
 from src.agent.nodes.reflection import reflection_node
+from src.agent.nodes.router import semantic_router
+from src.agent.nodes.early_exit import early_exit_node
 from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
 from src.agent.tools.draft import draft_add_stop, draft_remove_stop
@@ -97,6 +99,49 @@ def memory_manager(state: AgentState, config: dict):
     messages_to_drop = messages[start_idx : start_idx + num_to_drop]
     drop_commands = [RemoveMessage(id=msg.id) for msg in messages_to_drop if msg.id]
     
+    # --- Tier 0.5: Narrative Summarizer ---
+    existing_summary = state.get("running_summary", "")
+    from src.agent.utils import get_conversational_transcript
+    from src.core.config import get_llm
+    
+    transcript_of_dropped = get_conversational_transcript(messages_to_drop, turns=10)
+    new_summary = existing_summary
+    
+    if transcript_of_dropped:
+        logger.info("Generating narrative summary of evicted messages...")
+        llm = get_llm(temperature=0)
+        prompt = f"""
+You are the Narrative Memory Engine for an AI Travel Agent.
+You are receiving a batch of older messages that are about to be deleted from the context window.
+You must update the existing RUNNING_SUMMARY with the new events.
+
+CRITICAL INSTRUCTIONS:
+1. NEVER write vague summaries like "The agent discussed museums."
+2. You MUST preserve hard data discovered by the agent. If the agent used a tool to find that the Louvre opens at 9 AM and costs 22 Euros, your summary MUST include "Louvre: 9 AM, 22 Euros".
+3. You MUST preserve user decisions. If the user rejected a hotel, state exactly why (e.g., "User rejected Hotel X because it lacks a gym").
+
+EXISTING SUMMARY:
+{existing_summary}
+
+NEW MESSAGES TO INCORPORATE:
+{transcript_of_dropped}
+
+1-SHOT EXAMPLE OF A PERFECT SUMMARY UPDATE:
+Existing: The user is planning a trip to Tokyo.
+New Messages:
+USER: I want to visit a museum tomorrow.
+SYSTEM: [Tool 'search_web' completed. Result: The Mori Art Museum opens at 10 AM and costs 2000 Yen.]
+AGENT: The Mori Art Museum is a great choice! It opens at 10 AM and tickets are 2000 Yen.
+Output: The user is planning a trip to Tokyo and wants to visit a museum. The agent found the Mori Art Museum, which opens at 10 AM (2000 Yen).
+
+Return ONLY the updated paragraph.
+"""
+        try:
+            new_summary = llm.invoke(prompt).content
+        except Exception as e:
+            logger.error(f"Failed to generate running summary: {e}")
+            new_summary = existing_summary
+            
     # Send texts to Celery for Tier 2 Delta Extraction
     texts_to_extract = [msg.content for msg in messages_to_drop if isinstance(msg.content, str)]
     
@@ -113,13 +158,15 @@ def memory_manager(state: AgentState, config: dict):
         # Fire and forget async Celery task
         process_evicted_memory.delay(texts_to_extract, user_id, trip_id)
         
-    return {"messages": drop_commands}
+    return {"messages": drop_commands, "running_summary": new_summary}
 
 def build_graph(checkpointer: AsyncPostgresSaver = None):
     # initial graph with specific state (memory)
     builder = StateGraph(AgentState)
 
     # add our nodes
+    builder.add_node("semantic_router", semantic_router)
+    builder.add_node("early_exit", early_exit_node)
     builder.add_node("rag_injector", inject_memories)
     builder.add_node("planner", plan_itinerary)
     builder.add_node("agent", call_gemini)
@@ -135,8 +182,18 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     builder.add_node("reflection", reflection_node)
     builder.add_node("memory_manager", memory_manager)
 
-    # draw the entry edge -> goes to RAG injector first
-    builder.add_edge(START, "rag_injector")
+    # draw the entry edge -> goes to Router first
+    builder.add_edge(START, "semantic_router")
+    
+    # conditional edge from router
+    def route_from_start(state: AgentState):
+        intent = state.get("intent", "TRAVEL_PLANNING")
+        if intent in ["TRAVEL_PLANNING", "TRAVEL_PLANNING_RESET"]:
+            return "rag_injector"
+        return "early_exit"
+        
+    builder.add_conditional_edges("semantic_router", route_from_start)
+    builder.add_edge("early_exit", "memory_manager")
     
     # RAG -> Planner -> Agent
     builder.add_edge("rag_injector", "planner")

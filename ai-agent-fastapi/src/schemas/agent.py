@@ -31,3 +31,11 @@ class AgentState(TypedDict):
     # 7. Ephemeral RAG Context
     # Stores retrieved memories for the current turn without polluting the global messages array.
     rag_context: str
+    
+    # 8. Running Summarizer State
+    # Preserves the narrative flow of the conversation even after messages are evicted.
+    running_summary: str
+    
+    # 9. Semantic Intent (Gate 0)
+    # The classification of the user's latest message (e.g. TRAVEL_PLANNING, CHITCHAT)
+    intent: str

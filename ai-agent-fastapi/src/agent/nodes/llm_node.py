@@ -62,6 +62,10 @@ async def call_gemini(state: AgentState, config: dict):
     if rag_context:
         ephemeral_context += f"\nKNOWN CONSTRAINTS & MEMORIES:\n{rag_context}\n"
         
+    running_summary = state.get("running_summary", "")
+    if running_summary:
+        ephemeral_context += f"\nPREVIOUS EVENTS (Summary of dropped messages):\n{running_summary}\n"
+        
     if itinerary_draft:
         ephemeral_context += f"\nYOUR CURRENT ITINERARY DRAFT (In Memory):\n{json.dumps(itinerary_draft, indent=2)}\n"
     

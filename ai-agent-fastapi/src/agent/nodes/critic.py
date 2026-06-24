@@ -47,17 +47,19 @@ def evaluate_itinerary(state: AgentState, config: dict):
     structured_llm = llm.with_structured_output(CriticEvaluation)
     
     # Reconstruct the full conversation context for the Critic
-    # We only pass the last few messages to keep the Critic focused on recent semantics
-    recent_messages = messages[-5:] if len(messages) > 5 else messages
-    context_str = "\n".join([f"{msg.type}: {msg.content}" for msg in recent_messages if msg.content])
+    from src.agent.utils import get_conversational_transcript
+    context_str = get_conversational_transcript(messages, turns=5)
     
     import json
     draft_str = json.dumps(itinerary_draft, indent=2) if itinerary_draft else "[]"
     
+    rag_context = state.get("rag_context", "")
+    rag_injection = f"\n{rag_context}\n" if rag_context else ""
+    
     system_prompt = f"""
     You are a ruthless, world-class Travel Critic.
     Review the Agent's proposed actions and the current ITINERARY DRAFT below.
-    
+    {rag_injection}
     Check for:
     1. Geographic impossibilities (e.g., driving from NY to London).
     2. Scheduling impossibilities (e.g., visiting a museum at 3:00 AM).
@@ -71,6 +73,15 @@ def evaluate_itinerary(state: AgentState, config: dict):
     
     If it is flawless, set is_valid to true.
     If it has errors or semantic violations, set is_valid to false and provide scathing, explicit instructions on how the agent must fix it.
+    
+    1-SHOT EXAMPLE OF PERFECT CRITIQUE:
+    Draft: User is going to Tokyo. Added a stop to visit a museum at 3:00 AM.
+    Constraint Log: User wants a cheap trip.
+    Output:
+    {
+      "is_valid": false,
+      "feedback": "CRITICAL ERROR: You scheduled a museum visit at 3:00 AM! Museums are closed. Furthermore, you failed to check if the museum is cheap. Delete this stop immediately, call search_web to find cheap museums open during the day, and draft a new stop."
+    }
     """
     
     try:
