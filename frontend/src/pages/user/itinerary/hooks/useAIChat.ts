@@ -2,11 +2,14 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import type { ChatMessage, StreamEvent } from '@/types/chat';
 import { chatService } from '@/services/chatService';
 
-export const useAIChat = (tripId: string) => {
+interface UseAIChatOptions {
+  onDraftReceived?: (draftData: any[]) => void;
+}
+
+export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [currentThought, setCurrentThought] = useState<string>('');
   const [isThinking, setIsThinking] = useState<boolean>(false);
-  const [pendingDraft, setPendingDraft] = useState<any[] | null>(null);
 
   // Refs for simulating smooth typewriter streaming
   const eventSourceRef = useRef<EventSource | null>(null);
@@ -96,7 +99,9 @@ export const useAIChat = (tripId: string) => {
           case 'draft_update':
             try {
               const draftData = JSON.parse(data.content);
-              setPendingDraft(draftData);
+              if (options?.onDraftReceived) {
+                options.onDraftReceived(draftData);
+              }
             } catch (e) {
               console.error("Failed to parse draft_update", e);
             }
@@ -184,7 +189,7 @@ export const useAIChat = (tripId: string) => {
     };
   }, [connectStream]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (text: string, workspaceDraft?: any) => {
     // Optimistically add user message
     setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }]);
 
@@ -199,35 +204,21 @@ export const useAIChat = (tripId: string) => {
 
     try {
       connectStream();
-      await chatService.sendMessage(tripId, text);
+      await chatService.sendMessage(tripId, text, workspaceDraft);
     } catch (err) {
       console.error("Failed to send message", err);
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'agent', content: "**System Error:** Could not reach AI backend." }]);
     }
-  }, [tripId]);
+  }, [tripId, connectStream]);
 
   const approveDraft = useCallback(async () => {
-    setIsThinking(true);
-    setCurrentThought("> Committing draft to database...");
-    try {
-      connectStream();
-      await chatService.approveDraft(tripId);
-      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'agent', content: "Draft successfully committed to your itinerary!" }]);
-      setPendingDraft(null); // Clear draft on success
-    } catch (err) {
-      console.error("Failed to approve draft", err);
-      setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'agent', content: "**System Error:** Failed to commit draft." }]);
-    } finally {
-      setIsThinking(false);
-      setCurrentThought("");
-    }
+    // This is now replaced by the global "Save AI Drafts" button in ItineraryDetailPage
   }, [tripId]);
 
   return {
     messages,
     currentThought,
     isThinking,
-    pendingDraft,
     sendMessage,
     approveDraft
   };

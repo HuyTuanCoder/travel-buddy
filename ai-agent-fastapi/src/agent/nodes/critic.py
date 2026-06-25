@@ -32,7 +32,7 @@ def evaluate_itinerary(state: AgentState, config: dict):
 
     messages = state.get("messages", [])
     retry_count = state.get("retry_count", 0)
-    itinerary_draft = state.get("itinerary_draft", [])
+    itinerary_draft = state.get("itinerary_draft", {})
     
     # 1. FAILSAFE: If we hit 3 retries, force a pass to avoid infinite loop
     if retry_count >= 3:
@@ -51,7 +51,7 @@ def evaluate_itinerary(state: AgentState, config: dict):
     context_str = get_conversational_transcript(messages, turns=5)
     
     import json
-    draft_str = json.dumps(itinerary_draft, indent=2) if itinerary_draft else "[]"
+    draft_str = json.dumps(itinerary_draft, indent=2) if itinerary_draft else "{}"
     
     rag_context = state.get("rag_context", "")
     rag_injection = f"\n{rag_context}\n" if rag_context else ""

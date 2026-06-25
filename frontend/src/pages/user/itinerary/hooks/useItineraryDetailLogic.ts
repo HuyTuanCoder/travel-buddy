@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { getItineraryDetail, updateItinerary, deleteItinerary } from '@/services/itinerary/itineraryService'
+import { getItineraryDetail, updateItinerary, deleteItinerary, batchUpdateItinerary } from '@/services/itinerary/itineraryService'
 import { getMembers, inviteMember, removeMember, updateMemberRole, transferOwnership } from '@/services/itinerary/memberService'
 import { addDay, removeDay, addStop, updateStop, removeStop, reorderStops } from '@/services/itinerary/timelineService'
 import type {
@@ -19,6 +19,8 @@ import type {
 
 interface DetailState {
   itinerary: ItineraryDetailResponse | null
+  draftItinerary: ItineraryDetailResponse | null
+  modifiedStops: Record<string, { isAiModified?: boolean; isUserModified?: boolean }>
   members: MemberListResponse | null
   isLoading: boolean
   error: string | null
@@ -29,6 +31,8 @@ interface DetailState {
 export function useItineraryDetailLogic(itineraryId: string) {
   const [state, setState] = useState<DetailState>({
     itinerary: null,
+    draftItinerary: null,
+    modifiedStops: {},
     members: null,
     isLoading: true,
     error: null,
@@ -51,6 +55,8 @@ export function useItineraryDetailLogic(itineraryId: string) {
       ])
       setState({
         itinerary: detail,
+        draftItinerary: JSON.parse(JSON.stringify(detail)), // Deep clone for draft
+        modifiedStops: {}, // Reset modifications on fresh fetch
         members: memberList,
         isLoading: false,
         error: null,
@@ -179,6 +185,136 @@ export function useItineraryDetailLogic(itineraryId: string) {
     }
   }
 
+  // ==================== Draft / Co-Drafting Actions ====================
+
+  // Apply an AI or User modification to the local draft state only
+  const handleDraftUpdate = (
+    updater: (draft: ItineraryDetailResponse) => void,
+    stopIds: string[],
+    source: 'AI' | 'USER'
+  ) => {
+    setState((prev) => {
+      if (!prev.draftItinerary) return prev
+      
+      const newDraft = JSON.parse(JSON.stringify(prev.draftItinerary))
+      updater(newDraft)
+
+      const newModifiedStops = { ...prev.modifiedStops }
+      stopIds.forEach(id => {
+        if (!newModifiedStops[id]) newModifiedStops[id] = {}
+        if (source === 'AI') newModifiedStops[id].isAiModified = true
+        if (source === 'USER') newModifiedStops[id].isUserModified = true
+      })
+
+      return { ...prev, draftItinerary: newDraft, modifiedStops: newModifiedStops }
+    })
+  }
+
+  // Local Reorder (Drag and Drop)
+  const handleDraftReorderStops = (dayId: string, sourceIndex: number, destIndex: number) => {
+    setState((prev) => {
+      if (!prev.draftItinerary) return prev
+      const newDraft = JSON.parse(JSON.stringify(prev.draftItinerary))
+      const day = newDraft.days.find((d: any) => d.id === dayId)
+      if (!day) return prev
+
+      const [movedStop] = day.stops.splice(sourceIndex, 1)
+      day.stops.splice(destIndex, 0, movedStop)
+
+      // Mark the moved stop as user modified
+      const newModifiedStops = { ...prev.modifiedStops }
+      if (!newModifiedStops[movedStop.id]) newModifiedStops[movedStop.id] = {}
+      newModifiedStops[movedStop.id].isUserModified = true
+
+      return { ...prev, draftItinerary: newDraft, modifiedStops: newModifiedStops }
+    })
+  }
+
+  // Local Add Stop
+  const handleDraftAddStop = (dayId: string, stop: any, source: 'AI' | 'USER') => {
+    const tempId = stop.id || `temp-${Date.now()}`
+    const stopWithId = { ...stop, id: tempId }
+    handleDraftUpdate((draft) => {
+      const day = draft.days.find(d => d.id === dayId)
+      if (day) day.stops.push(stopWithId)
+    }, [tempId], source)
+  }
+
+  // Local Update Stop
+  const handleDraftUpdateStop = (stopId: string, payload: any, source: 'AI' | 'USER') => {
+    handleDraftUpdate((draft) => {
+      for (const day of draft.days) {
+        const idx = day.stops.findIndex(s => s.id === stopId)
+        if (idx !== -1) {
+          day.stops[idx] = { ...day.stops[idx], ...payload }
+          break
+        }
+      }
+    }, [stopId], source)
+  }
+
+  // Local Remove Stop
+  const handleDraftRemoveStop = (stopId: string) => {
+    setState((prev) => {
+      if (!prev.draftItinerary) return prev
+      const newDraft = JSON.parse(JSON.stringify(prev.draftItinerary))
+      for (const day of newDraft.days) {
+        day.stops = day.stops.filter((s: any) => s.id !== stopId)
+      }
+      return { ...prev, draftItinerary: newDraft }
+    })
+  }
+
+  // Discard all local drafts and revert to pristine DB state
+  const handleDraftDiscard = () => {
+    setState((prev) => ({
+      ...prev,
+      draftItinerary: prev.itinerary ? JSON.parse(JSON.stringify(prev.itinerary)) : null,
+      modifiedStops: {}
+    }))
+  }
+
+  // Save drafts by pushing the entire draftItinerary to the backend batch-update
+  const handleDraftSave = async () => {
+    if (!state.draftItinerary) return
+
+    setState((prev) => ({ ...prev, isLoading: true, error: null }))
+    try {
+      const payload = {
+        days: state.draftItinerary.days.map((day) => ({
+          dayId: day.id,
+          stops: day.stops.map((stop: any) => ({
+            id: stop.id,
+            googlePlaceId: stop.googlePlaceId,
+            locationName: stop.locationName,
+            address: stop.address,
+            stopType: stop.stopType,
+            userNotes: stop.userNotes,
+            arrivalTime: stop.arrivalTime,
+            departureTime: stop.departureTime,
+            estimatedCost: stop.estimatedCost,
+          })),
+        })),
+      }
+
+      const updatedDetail = await batchUpdateItinerary(itineraryId, payload)
+      setState((prev) => ({
+        ...prev,
+        itinerary: updatedDetail,
+        draftItinerary: JSON.parse(JSON.stringify(updatedDetail)),
+        modifiedStops: {},
+        isLoading: false,
+      }))
+    } catch (err: any) {
+      console.error('Failed to save drafts:', err)
+      setState((prev) => ({
+        ...prev,
+        isLoading: false,
+        error: err.message || 'Failed to save drafts.',
+      }))
+    }
+  }
+
   // ==================== Member Actions ====================
 
   // Invite a user to the trip
@@ -242,6 +378,8 @@ export function useItineraryDetailLogic(itineraryId: string) {
   return {
     // State
     itinerary: state.itinerary,
+    draftItinerary: state.draftItinerary,
+    modifiedStops: state.modifiedStops,
     members: state.members,
     isLoading: state.isLoading,
     error: state.error,
@@ -254,13 +392,21 @@ export function useItineraryDetailLogic(itineraryId: string) {
     handleAddDay,
     handleRemoveDay,
 
-    // Stop actions
+    // Stop actions (DB)
     addStopDayId,
     setAddStopDayId,
     handleAddStop,
     handleUpdateStop,
     handleRemoveStop,
     handleReorderStops,
+
+    // Draft Actions (UI Overlay)
+    handleDraftReorderStops,
+    handleDraftAddStop,
+    handleDraftUpdateStop,
+    handleDraftRemoveStop,
+    handleDraftDiscard,
+    handleDraftSave,
 
     // Member actions
     handleInvite,

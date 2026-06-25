@@ -20,6 +20,7 @@ interface DayColumnProps {
   onRemoveStop: (stopId: string) => void
   isAddStopOpen: boolean
   onToggleAddStop: () => void
+  modifiedStops?: Record<string, { isAiModified?: boolean; isUserModified?: boolean }>
 }
 
 // ==================== Component ====================
@@ -32,6 +33,7 @@ export default function DayColumn({
   onRemoveStop,
   isAddStopOpen,
   onToggleAddStop,
+  modifiedStops = {},
 }: DayColumnProps) {
   // Format scheduled date if it exists
   const formattedDate = day.scheduledDate
@@ -45,7 +47,7 @@ export default function DayColumn({
 
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5">
+    <div className="flex flex-col max-h-[70vh] rounded-2xl border border-slate-200 bg-white p-5">
       {/* --- Day header --- */}
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-3">
@@ -81,41 +83,47 @@ export default function DayColumn({
       <Separator className="mb-4" />
 
       {/* --- Stops list --- */}
-      {day.stops.length === 0 && !isAddStopOpen ? (
-        <p className="text-sm text-slate-400 italic py-4 text-center">
-          No stops yet. Click "+ Stop" to add one.
-        </p>
-      ) : (
-        <Droppable droppableId={day.id}>
-          {(provided: any) => (
-            <div
-              className="space-y-3"
-              ref={provided.innerRef}
-              {...provided.droppableProps}
-            >
-              {day.stops.map((stop, index) => (
-                <StopCard
-                  key={stop.id}
-                  stop={stop}
-                  index={index}
-                  onUpdate={onUpdateStop}
-                  onRemove={onRemoveStop}
-                />
-              ))}
-              {provided.placeholder}
-            </div>
-          )}
-        </Droppable>
-      )}
+      <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 -mr-2">
+        {day.stops.length === 0 && !isAddStopOpen ? (
+          <p className="text-sm text-slate-400 italic py-4 text-center">
+            No stops yet. Click "+ Stop" to add one.
+          </p>
+        ) : (
+          <Droppable droppableId={day.id}>
+            {(provided: any) => (
+              <div
+                className="space-y-3 pb-4"
+                ref={provided.innerRef}
+                {...provided.droppableProps}
+              >
+                {day.stops.map((stop, index) => (
+                  <StopCard
+                    key={stop.id}
+                    stop={stop}
+                    index={index}
+                    onUpdate={onUpdateStop}
+                    onRemove={onRemoveStop}
+                    isDraft={!!modifiedStops[stop.id]}
+                    isAiModified={modifiedStops[stop.id]?.isAiModified}
+                  />
+                ))}
+                {provided.placeholder}
+              </div>
+            )}
+          </Droppable>
+        )}
 
-      {/* --- Inline add stop form --- */}
-      {isAddStopOpen && (
-        <AddStopForm
-          dayId={day.id}
-          onAddStop={onAddStop}
-          onCancel={onToggleAddStop}
-        />
-      )}
+        {/* --- Inline add stop form --- */}
+        {isAddStopOpen && (
+          <div className="mt-4">
+            <AddStopForm
+              dayId={day.id}
+              onAddStop={onAddStop}
+              onCancel={onToggleAddStop}
+            />
+          </div>
+        )}
+      </div>
     </div>
   )
 }

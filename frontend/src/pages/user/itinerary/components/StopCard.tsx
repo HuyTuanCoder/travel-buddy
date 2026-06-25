@@ -2,7 +2,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { useState } from 'react'
 import { Draggable } from '@hello-pangea/dnd'
-import { GripVertical, Pencil, Trash2 } from 'lucide-react'
+import { GripVertical, Pencil, Trash2, Sparkles } from 'lucide-react'
 import type { TripStopResponse, UpdateStopRequest } from '@/types/itineraryTypes'
 import EditStopDialog from './EditStopDialog'
 
@@ -13,6 +13,8 @@ interface StopCardProps {
   index: number
   onUpdate: (stopId: string, payload: UpdateStopRequest) => void
   onRemove: (stopId: string) => void
+  isDraft?: boolean
+  isAiModified?: boolean
 }
 
 // ==================== Stop type badge colors ====================
@@ -26,7 +28,7 @@ const stopTypeStyles: Record<string, string> = {
 
 // ==================== Component ====================
 
-export default function StopCard({ stop, index, onUpdate, onRemove }: StopCardProps) {
+export default function StopCard({ stop, index, onUpdate, onRemove, isDraft, isAiModified }: StopCardProps) {
   const [isEditOpen, setIsEditOpen] = useState(false)
   // Format time for display (HH:mm → "10:30 AM")
   const formatTime = (time: string | null): string | null => {
@@ -47,7 +49,11 @@ export default function StopCard({ stop, index, onUpdate, onRemove }: StopCardPr
           <div
             ref={provided.innerRef}
             {...provided.draggableProps}
-            className="group flex items-start gap-3 rounded-xl border border-slate-100 bg-white p-3 transition-all hover:border-slate-200 hover:shadow-sm"
+            className={`group relative flex items-start gap-3 rounded-xl border p-3 transition-all ${
+              isDraft
+                ? 'border-dashed border-blue-400 bg-blue-50/50 hover:bg-blue-50'
+                : 'border-slate-100 bg-white hover:border-slate-200 hover:shadow-sm'
+            } ${provided.draggableProps.style?.isDragging ? 'bg-blue-100/80 shadow-md' : ''}`}
           >
             {/* Drag handle */}
             <div
@@ -65,7 +71,7 @@ export default function StopCard({ stop, index, onUpdate, onRemove }: StopCardPr
       {/* Stop details */}
       <div className="flex-1 min-w-0 space-y-1.5">
         {/* Place ID and type badge */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 pr-6">
           <span className="text-sm font-medium text-slate-800 truncate">
             {stop.locationName || `Place: ${stop.googlePlaceId}`}
           </span>
@@ -75,6 +81,9 @@ export default function StopCard({ stop, index, onUpdate, onRemove }: StopCardPr
           >
             {stop.stopType.toLowerCase()}
           </Badge>
+          {isDraft && !isAiModified && (
+            <Badge variant="secondary" className="text-[9px] h-4 bg-blue-100 text-blue-700">Unsaved</Badge>
+          )}
         </div>
 
         {/* Time range and cost */}
@@ -99,8 +108,15 @@ export default function StopCard({ stop, index, onUpdate, onRemove }: StopCardPr
         )}
       </div>
 
+      {/* AI Stamp */}
+      {isAiModified && (
+        <div className="absolute top-3 right-3 text-blue-500 opacity-80" title="AI Suggested">
+          <Sparkles size={16} className="fill-blue-500/20" />
+        </div>
+      )}
+
       {/* Action buttons — visible on hover */}
-      <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <div className={`flex flex-col gap-1 transition-opacity ${isAiModified ? 'mt-6 opacity-0 group-hover:opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
         <Button
           variant="ghost"
           size="icon"

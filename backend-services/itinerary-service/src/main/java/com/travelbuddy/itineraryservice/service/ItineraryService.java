@@ -159,6 +159,93 @@ public class ItineraryService {
     return response;
   }
 
+  // ==================== BATCH UPDATE /itineraries/{id}/batch-update ====================
+
+  @Transactional
+  public ItineraryDetailResponse batchUpdateItinerary(UUID itineraryId, BatchUpdateItineraryRequest request, String userId) {
+    log.info("[batchUpdateItinerary] >>> Input: itineraryId={}, userId={}", itineraryId, userId);
+
+    // 1. Verify the itinerary exists
+    Itinerary itinerary = accessGuard.findItinerary(itineraryId);
+
+    // 2. Verify the user has OWNER or EDITOR role
+    accessGuard.verifyEditPermission(itineraryId, userId);
+
+    // 3. Fetch all days for validation
+    List<ItineraryDay> itineraryDays = dayRepository.findByItineraryIdOrderByDayNumberAsc(itineraryId);
+    Map<UUID, ItineraryDay> dayMap = itineraryDays.stream()
+        .collect(Collectors.toMap(ItineraryDay::getId, day -> day));
+
+    // 4. Process each day in the payload
+    for (BatchUpdateDayRequest dayReq : request.getDays()) {
+      ItineraryDay day = dayMap.get(dayReq.getDayId());
+      if (day == null) {
+        throw new IllegalArgumentException("Day ID " + dayReq.getDayId() + " does not belong to itinerary " + itineraryId);
+      }
+
+      // Gather all existing stops for this day
+      List<TripStop> existingStops = stopRepository.findByItineraryDayIdOrderByVisitOrderAsc(day.getId());
+      Map<UUID, TripStop> existingStopMap = existingStops.stream()
+          .collect(Collectors.toMap(TripStop::getId, stop -> stop));
+
+      // Gather all valid UUIDs from the incoming payload
+      List<UUID> incomingStopIds = dayReq.getStops().stream()
+          .map(req -> {
+            try {
+              return UUID.fromString(req.getId());
+            } catch (IllegalArgumentException e) {
+              return null; // temporary id
+            }
+          })
+          .filter(id -> id != null)
+          .collect(Collectors.toList());
+
+      // Delete existing stops that are NOT in the incoming payload
+      for (TripStop existingStop : existingStops) {
+        if (!incomingStopIds.contains(existingStop.getId())) {
+          stopRepository.delete(existingStop);
+        }
+      }
+
+      // Process incoming stops
+      int visitOrder = 0;
+      for (BatchUpdateStopRequest stopReq : dayReq.getStops()) {
+        TripStop stopToSave;
+        UUID stopId = null;
+        try {
+          stopId = UUID.fromString(stopReq.getId());
+        } catch (IllegalArgumentException e) {
+          // It's a temp id
+        }
+
+        if (stopId != null && existingStopMap.containsKey(stopId)) {
+          stopToSave = existingStopMap.get(stopId);
+        } else {
+          stopToSave = new TripStop();
+          stopToSave.setItineraryDay(day);
+        }
+
+        // Update fields
+        if (stopReq.getGooglePlaceId() == null || stopReq.getGooglePlaceId().isBlank()) {
+          throw new IllegalArgumentException("googlePlaceId is required for all stops");
+        }
+        stopToSave.setGooglePlaceId(stopReq.getGooglePlaceId());
+        stopToSave.setStopType(stopReq.getStopType());
+        stopToSave.setVisitOrder(visitOrder++);
+        stopToSave.setUserNotes(stopReq.getUserNotes());
+        stopToSave.setArrivalTime(stopReq.getArrivalTime());
+        stopToSave.setDepartureTime(stopReq.getDepartureTime());
+        stopToSave.setEstimatedCost(stopReq.getEstimatedCost());
+
+        stopRepository.save(stopToSave);
+      }
+    }
+
+    // 5. Fetch and return the fully updated itinerary
+    log.info("[batchUpdateItinerary] <<< Output: successfully reconciled itinerary {}", itineraryId);
+    return getItineraryDetail(itineraryId, userId);
+  }
+
   // ==================== DELETE /itineraries/{id} ====================
 
   @Transactional

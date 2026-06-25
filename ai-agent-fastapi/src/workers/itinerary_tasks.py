@@ -18,7 +18,7 @@ logger = structlog.get_logger(__name__)
 # ---------------------------------------------------------
 # Core Async Handlers that run LangGraph
 # ---------------------------------------------------------
-async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: str):
+async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: str, itinerary_draft: dict = None):
     log = logger.bind(thread_id=trip_id, user_id=user_id, correlation_id=correlation_id)
     log.info("Starting AI chat task")
     
@@ -30,7 +30,12 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
         conn_string = DATABASE_URL.replace("+asyncpg", "")
         async with AsyncPostgresSaver.from_conn_string(conn_string) as checkpointer:
             app_graph = build_graph(checkpointer)
-            inputs = {"messages": [("user", message)]}
+            
+            inputs = {
+                "messages": [("user", message)]
+            }
+            if itinerary_draft is not None:
+                inputs["itinerary_draft"] = itinerary_draft
             
             # Setup Langfuse tracing with full metadata
             langfuse_handler = CallbackHandler()
@@ -71,15 +76,22 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                         else:
                             status = "SUCCESS"
                             
+                            # Instantly broadcast draft_add_stop or draft_remove_stop to prevent duplicates
+                            tool_name = event["name"]
+                            if tool_name in ["draft_add_stop", "draft_remove_stop"]:
+                                try:
+                                    # The tool returns JSON string of the draft action
+                                    action_json = json.loads(content)
+                                    # Wrap it in an array so the frontend processes it
+                                    await publish_event(pubsub_channel, "draft_update", json.dumps([action_json]))
+                                except Exception as e:
+                                    logger.error(f"Failed to parse draft tool output: {e}")
+
                         display_content = content[:97] + "..." if len(content) > 100 else content
-                        await publish_thought(pubsub_channel, f"> Action {event['name']} {status}: {display_content}\n")
+                        await publish_event(pubsub_channel, "thought", f"> Action {event['name']} {status}: {display_content}\n")
             
             # Check if paused before a tool execution
             state = await app_graph.aget_state(config)
-            
-            # Broadcast the latest draft to the frontend so the UI stays synced
-            current_draft = state.values.get("itinerary_draft", [])
-            await publish_event(pubsub_channel, "draft_update", json.dumps(current_draft))
             
             if state.next and "tools" in state.next:
                 last_msg = state.values["messages"][-1]
@@ -183,12 +195,9 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
 # Celery Sync Wrappers (The entrypoints for RabbitMQ)
 # ---------------------------------------------------------
 @shared_task(name="process_chat_message")
-def process_chat_message(trip_id: str, message: str, user_id: str, correlation_id: str):
-    """
-    Pulled from RabbitMQ by the Celery worker pod.
-    Runs the async logic in the synchronous Celery thread.
-    """
-    asyncio.run(_run_chat(trip_id, message, user_id, correlation_id))
+def process_chat_message(trip_id: str, message: str, user_id: str, correlation_id: str, itinerary_draft: dict = None):
+    # This runs inside the Celery worker process
+    asyncio.run(_run_chat(trip_id, message, user_id, correlation_id, itinerary_draft))
 
 @shared_task(name="approve_tool_call")
 def approve_tool_call(trip_id: str, user_id: str, correlation_id: str):

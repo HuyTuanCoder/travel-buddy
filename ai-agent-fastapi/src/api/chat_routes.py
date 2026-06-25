@@ -18,6 +18,7 @@ router = APIRouter()
 class ChatRequest(BaseModel):
     trip_id: str
     message: str
+    itinerary_draft: Optional[dict] = None
 
 class ApproveRequest(BaseModel):
     trip_id: str
@@ -35,10 +36,10 @@ async def chat_endpoint(
     Offloads the chat request to RabbitMQ via Celery and returns immediately.
     We leverage the Spring API Gateway injected headers for distributed tracing/auth.
     """
-    # .delay() pushes this to RabbitMQ instantly
     process_chat_message.delay(
         trip_id=request.trip_id,
         message=request.message,
+        itinerary_draft=request.itinerary_draft,
         user_id=x_user_id or "anonymous",
         correlation_id=x_correlation_id or "none"
     )

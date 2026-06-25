@@ -21,8 +21,8 @@ class AgentState(TypedDict):
     critic_feedback: str
     
     # 5. Incremental Draft State (Token Saver)
-    # The agent builds the trip here in memory. Only hits DB when user approves.
-    itinerary_draft: list[dict]
+    # The frontend injects the entire active UI workspace (displayItinerary) here on every turn.
+    itinerary_draft: dict
     
     # 6. Failsafe Retry Count
     # Prevents infinite loops between Agent and Critic.

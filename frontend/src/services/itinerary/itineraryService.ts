@@ -67,3 +67,17 @@ export const deleteItinerary = async (itineraryId: string): Promise<void> => {
     throw error.response?.data ?? error
   }
 }
+
+// ==================== POST /itineraries/{id}/batch-update ====================
+
+export const batchUpdateItinerary = async (
+  itineraryId: string,
+  payload: { days: any[] },
+): Promise<ItineraryDetailResponse> => {
+  try {
+    const response = await api.post(`/itineraries/${itineraryId}/batch-update`, payload)
+    return response.data as ItineraryDetailResponse
+  } catch (error: any) {
+    throw error.response?.data ?? error
+  }
+}

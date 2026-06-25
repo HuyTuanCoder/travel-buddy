@@ -42,7 +42,7 @@ def plan_itinerary(state: AgentState, config: dict):
     
     # Extract the RAG context and the current draft from the state
     rag_context = state.get("rag_context", "")
-    itinerary_draft = state.get("itinerary_draft", [])
+    itinerary_draft = state.get("itinerary_draft", {})
     import json
     draft_context = json.dumps(itinerary_draft, indent=2) if itinerary_draft else "The draft is currently empty."
             

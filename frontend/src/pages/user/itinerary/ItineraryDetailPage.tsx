@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import type { PanelImperativeHandle } from "react-resizable-panels"
-import { Users, Map as MapIcon, ChevronLeft, ChevronRight, PlusCircle, Calendar, MessageSquare } from 'lucide-react'
+import { Users, Map as MapIcon, ChevronLeft, ChevronRight, PlusCircle, Calendar, MessageSquare, Save } from 'lucide-react'
 import { APIProvider } from '@vis.gl/react-google-maps'
 import { DragDropContext } from '@hello-pangea/dnd'
 import type { DropResult } from '@hello-pangea/dnd'
@@ -37,6 +37,8 @@ export default function ItineraryDetailPage() {
 
   const {
     itinerary,
+    draftItinerary,
+    modifiedStops,
     members,
     isLoading,
     error,
@@ -49,7 +51,12 @@ export default function ItineraryDetailPage() {
     handleAddStop,
     handleUpdateStop,
     handleRemoveStop,
-    handleReorderStops,
+    handleDraftReorderStops,
+    handleDraftAddStop,
+    handleDraftUpdateStop,
+    handleDraftRemoveStop,
+    handleDraftDiscard,
+    handleDraftSave,
     handleInvite,
     handleRemoveMember,
     handleUpdateMemberRole,
@@ -92,18 +99,11 @@ export default function ItineraryDetailPage() {
       return
     }
 
-    if (!itinerary) return
-
-    const day = itinerary.days.find((d) => d.id === source.droppableId)
-    if (!day) return
-
-    const newStops = Array.from(day.stops)
-    const [movedStop] = newStops.splice(source.index, 1)
-    newStops.splice(destination.index, 0, movedStop)
-
-    const stopIds = newStops.map((s) => s.id)
-    handleReorderStops(source.droppableId, { stopIds })
+    // Use the draft reorder instead of the immediate API call
+    handleDraftReorderStops(source.droppableId, source.index, destination.index)
   }
+
+  const displayItinerary = draftItinerary || itinerary
 
   // --- Loading state ---
   if (isLoading) {
@@ -125,7 +125,7 @@ export default function ItineraryDetailPage() {
   }
 
   // --- Error or not found ---
-  if (!itinerary) {
+  if (!displayItinerary) {
     return (
       <main className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
@@ -157,18 +157,18 @@ export default function ItineraryDetailPage() {
           <div>
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-2xl font-semibold text-slate-900">
-                {itinerary.title}
+                {displayItinerary.title}
               </h1>
               <Badge
                 variant="outline"
-                className={statusStyles[itinerary.status] ?? ''}
+                className={statusStyles[displayItinerary.status] ?? ''}
               >
-                {itinerary.status.toLowerCase()}
+                {displayItinerary.status.toLowerCase()}
               </Badge>
             </div>
             <p className="text-sm text-slate-500">
-              {itinerary.timezone} · {itinerary.days.length} day
-              {itinerary.days.length !== 1 ? 's' : ''}
+              {displayItinerary.timezone} · {displayItinerary.days.length} day
+              {displayItinerary.days.length !== 1 ? 's' : ''}
             </p>
           </div>
 
@@ -179,11 +179,11 @@ export default function ItineraryDetailPage() {
               size="sm"
               onClick={() =>
                 handleUpdateItinerary({
-                  status: itinerary.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE',
+                  status: displayItinerary.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE',
                 })
               }
             >
-              {itinerary.status === 'ACTIVE' ? 'Archive' : 'Activate'}
+              {displayItinerary.status === 'ACTIVE' ? 'Archive' : 'Activate'}
             </Button>
             <Button
               variant="outline"
@@ -290,9 +290,10 @@ export default function ItineraryDetailPage() {
                   {/* Custom Tab Navigation */}
                   <div className="h-10 flex w-full items-center justify-between border-b border-slate-200 px-3 shrink-0 bg-slate-50/80">
                     <div className="flex items-center overflow-x-auto hide-scrollbar gap-2">
-                      {itinerary.days.map((day, idx) => (
-                        <button
+                      {displayItinerary.days.map((day, idx) => (
+                        <a
                           key={day.id}
+                          href={`#day-${day.id}`}
                           onClick={() => setActiveTab(day.id)}
                           className={`pb-1 font-medium text-sm transition-colors relative whitespace-nowrap shrink-0 px-2 mt-1 ${
                             activeTab === day.id ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
@@ -302,12 +303,31 @@ export default function ItineraryDetailPage() {
                           {activeTab === day.id && (
                             <span className="absolute -bottom-2 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full" />
                           )}
-                        </button>
+                        </a>
                       ))}
                     </div>
                     
-                    {/* Actions: Add Day & Collapse */}
+                    {/* Actions: Save, Add Day & Collapse */}
                     <div className="flex items-center gap-2 shrink-0">
+                      {Object.keys(modifiedStops).length > 0 && (
+                        <div className="flex items-center gap-1 mr-2 border-r border-slate-200 pr-3 animate-in fade-in">
+                          <button
+                            onClick={handleDraftDiscard}
+                            className="text-xs font-semibold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                          >
+                            Discard
+                          </button>
+                          <button
+                            onClick={handleDraftSave}
+                            disabled={isLoading}
+                            className="flex items-center text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm disabled:opacity-50"
+                          >
+                            <Save size={12} className="mr-1.5" />
+                            {isLoading ? "Saving..." : "Save"}
+                          </button>
+                        </div>
+                      )}
+                      
                       <button
                         onClick={() => handleAddDay({ scheduledDate: null })}
                         className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap"
@@ -320,18 +340,22 @@ export default function ItineraryDetailPage() {
                     </div>
                   </div>
 
-                  <div className="flex-1 w-full overflow-y-auto hide-scrollbar p-6 bg-slate-50/30">
+                  <div className="flex-1 w-full overflow-y-auto hide-scrollbar p-6 bg-slate-50/30 scroll-smooth">
                     <DragDropContext onDragEnd={onDragEnd}>
-                      {itinerary.days
-                        .filter((day) => day.id === activeTab)
-                        .map((day) => (
-                          <div key={day.id} className="animate-in fade-in slide-in-from-bottom-2 duration-300 w-full">
+                      <div className="space-y-8 pb-20">
+                        {displayItinerary.days.map((day) => (
+                          <div 
+                            key={day.id} 
+                            id={`day-${day.id}`}
+                            className="animate-in fade-in slide-in-from-bottom-2 duration-300 w-full"
+                          >
                             <DayColumn
                               day={day}
+                              modifiedStops={modifiedStops}
                               onRemoveDay={handleRemoveDay}
-                              onAddStop={handleAddStop}
-                              onUpdateStop={handleUpdateStop}
-                              onRemoveStop={handleRemoveStop}
+                              onAddStop={(dayId, payload) => handleDraftAddStop(dayId, payload, 'USER')}
+                              onUpdateStop={(stopId, payload) => handleDraftUpdateStop(stopId, payload, 'USER')}
+                              onRemoveStop={(stopId) => handleDraftRemoveStop(stopId)}
                               isAddStopOpen={addStopDayId === day.id}
                               onToggleAddStop={() =>
                                 setAddStopDayId(addStopDayId === day.id ? null : day.id)
@@ -339,6 +363,7 @@ export default function ItineraryDetailPage() {
                             />
                           </div>
                         ))}
+                      </div>
                     </DragDropContext>
                   </div>
                 </ResizablePanel>
@@ -366,7 +391,7 @@ export default function ItineraryDetailPage() {
                     </div>
                   </div>
                   <div className="flex-1 relative overflow-y-auto bg-white">
-                    <TripMapVisualizer itinerary={itinerary} />
+                    <TripMapVisualizer itinerary={displayItinerary} />
                   </div>
                 </ResizablePanel>
             )}
@@ -381,7 +406,28 @@ export default function ItineraryDetailPage() {
                   minSize={20}
                   className="h-full"
                 >
-                  <AIChatPanel tripId={id!} />
+                  <AIChatPanel 
+                    tripId={id!} 
+                    workspaceDraft={displayItinerary}
+                    onDraftReceived={(draftStops) => {
+                      draftStops.forEach(stop => {
+                        const targetDay = displayItinerary?.days.find(d => d.dayNumber === stop.day_number);
+                        if (targetDay) {
+                          const mappedStop = {
+                            locationName: stop.name || stop.place_name,
+                            address: stop.address || '',
+                            stopType: stop.stop_type || 'ATTRACTION',
+                            userNotes: stop.user_notes || stop.description || '',
+                            googlePlaceId: stop.google_place_id,
+                            estimatedCost: stop.estimated_cost ? parseFloat(stop.estimated_cost) : null,
+                            arrivalTime: stop.arrival_time || null,
+                            departureTime: stop.departure_time || null,
+                          };
+                          handleDraftAddStop(targetDay.id, mappedStop, 'AI');
+                        }
+                      });
+                    }}
+                  />
                 </ResizablePanel>
             )}
 
