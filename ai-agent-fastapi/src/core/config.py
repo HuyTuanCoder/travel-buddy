@@ -20,6 +20,7 @@ class Settings(BaseSettings):
     # External Services
     QDRANT_URL: str
     GOOGLE_MAPS_API_KEY: str
+    TAVILY_API_KEY: str = ""
     
     # Microservice gRPC
     ITINERARY_GRPC_URL: str
@@ -54,5 +55,6 @@ def get_llm(model_name: str = "gemini-2.5-flash", temperature: float = 0) -> Cha
         temperature=temperature,
         project=settings.GCP_PROJECT_ID,
         location=settings.GCP_LOCATION,
+        stream_usage=True,
         # GOOGLE_APPLICATION_CREDENTIALS must be set in the environment or Docker mount
     )

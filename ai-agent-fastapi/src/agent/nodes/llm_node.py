@@ -5,16 +5,15 @@ from src.schemas.agent import AgentState
 from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
 from src.agent.tools.memory import search_past_conversations
-from src.agent.tools.draft import draft_add_stop, draft_remove_stop
+from src.agent.tools.draft import draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop_between_days
 from src.core.config import get_llm
 import json
 
 logger = structlog.get_logger(__name__)
 
 ALL_TOOLS = [
-    add_stop, remove_stop, update_stop, move_stop_between_days,
     search_web, read_webpage, find_and_register_place, search_past_conversations,
-    draft_add_stop, draft_remove_stop
+    draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop_between_days
 ]
 
 async def call_gemini(state: AgentState, config: dict):
@@ -36,11 +35,10 @@ async def call_gemini(state: AgentState, config: dict):
     # If so, we parse it and append/remove from the local itinerary_draft state.
     if messages and messages[-1].type == "tool":
         last_tool_msg = messages[-1]
-        if last_tool_msg.name in ["draft_add_stop", "draft_remove_stop"]:
+        if last_tool_msg.name in ["draft_add_stop", "draft_remove_stop", "draft_update_stop", "draft_move_stop_between_days"]:
             try:
                 action_data = json.loads(last_tool_msg.content)
                 if action_data.get("action") == "add":
-                    # Remove the 'action' key and append
                     del action_data["action"]
                     itinerary_draft.append(action_data)
                     logger.info(f"Agent Node: Appended to itinerary_draft. Current draft size: {len(itinerary_draft)}")
@@ -49,6 +47,17 @@ async def call_gemini(state: AgentState, config: dict):
                         stop for stop in itinerary_draft 
                         if not (stop.get("google_place_id") == action_data.get("google_place_id") and stop.get("day_number") == action_data.get("day_number"))
                     ]
+                elif action_data.get("action") == "update":
+                    for stop in itinerary_draft:
+                        if stop.get("google_place_id") == action_data.get("google_place_id") and stop.get("day_number") == action_data.get("day_number"):
+                            if action_data.get("user_notes"): stop["user_notes"] = action_data["user_notes"]
+                            if action_data.get("arrival_time"): stop["arrival_time"] = action_data["arrival_time"]
+                            if action_data.get("departure_time"): stop["departure_time"] = action_data["departure_time"]
+                            if action_data.get("estimated_cost"): stop["estimated_cost"] = action_data["estimated_cost"]
+                elif action_data.get("action") == "move":
+                    for stop in itinerary_draft:
+                        if stop.get("google_place_id") == action_data.get("google_place_id") and stop.get("day_number") == action_data.get("old_day_number"):
+                            stop["day_number"] = action_data.get("new_day_number")
             except Exception as e:
                 logger.error(f"Agent Node failed to parse draft tool output: {e}")
     

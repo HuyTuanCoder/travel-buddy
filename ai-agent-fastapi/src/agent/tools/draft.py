@@ -39,6 +39,19 @@ def draft_add_stop(day_number: int, google_place_id: str, name: str, stop_type: 
     }
     return json.dumps(draft_item)
 
+class DraftUpdateStopArgs(BaseModel):
+    google_place_id: str = Field(description="The Google Place ID of the stop to update.")
+    day_number: int = Field(description="The day number the stop is currently on.")
+    user_notes: str = Field(default="", description="Optional updated notes")
+    arrival_time: str = Field(default="", description="Optional updated arrival time (HH:mm)")
+    departure_time: str = Field(default="", description="Optional updated departure time (HH:mm)")
+    estimated_cost: str = Field(default="", description="Optional updated estimated cost")
+
+class DraftMoveStopArgs(BaseModel):
+    google_place_id: str = Field(description="The Google Place ID of the stop to move.")
+    old_day_number: int = Field(description="The day number the stop is currently on.")
+    new_day_number: int = Field(description="The day number to move the stop to.")
+
 @tool("draft_remove_stop", args_schema=DraftRemoveStopArgs)
 def draft_remove_stop(google_place_id: str, day_number: int) -> str:
     """
@@ -48,5 +61,34 @@ def draft_remove_stop(google_place_id: str, day_number: int) -> str:
         "action": "remove",
         "google_place_id": google_place_id,
         "day_number": day_number
+    }
+    return json.dumps(draft_item)
+
+@tool("draft_update_stop", args_schema=DraftUpdateStopArgs)
+def draft_update_stop(google_place_id: str, day_number: int, user_notes: str = "", arrival_time: str = "", departure_time: str = "", estimated_cost: str = "") -> str:
+    """
+    Call this tool to update the notes or timings of an existing stop in the itinerary DRAFT in memory.
+    """
+    draft_item = {
+        "action": "update",
+        "google_place_id": google_place_id,
+        "day_number": day_number,
+        "user_notes": user_notes,
+        "arrival_time": arrival_time,
+        "departure_time": departure_time,
+        "estimated_cost": estimated_cost
+    }
+    return json.dumps(draft_item)
+
+@tool("draft_move_stop_between_days", args_schema=DraftMoveStopArgs)
+def draft_move_stop_between_days(google_place_id: str, old_day_number: int, new_day_number: int) -> str:
+    """
+    Call this tool to move a stop from one day to another in the itinerary DRAFT in memory.
+    """
+    draft_item = {
+        "action": "move",
+        "google_place_id": google_place_id,
+        "old_day_number": old_day_number,
+        "new_day_number": new_day_number
     }
     return json.dumps(draft_item)

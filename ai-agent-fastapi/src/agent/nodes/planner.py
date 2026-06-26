@@ -15,16 +15,14 @@ class PlanChecklist(BaseModel):
         description="A strict, step-by-step checklist of actions to fulfill the user's request."
     )
 
-def plan_itinerary(state: AgentState, config: dict):
+async def plan_itinerary(state: AgentState, config: dict):
     """
     Gate 1: The Planner Node.
     Forces the AI to generate a strict reasoning trace before executing tools.
     """
     thread_id = config.get("configurable", {}).get("thread_id", "")
     if thread_id:
-        asyncio.get_event_loop().run_until_complete(
-            publish_thought(f"stream:{thread_id}", "Analyzing request constraints and building step-by-step checklist...")
-        )
+        await publish_thought(f"stream:{thread_id}", "Analyzing request constraints and building step-by-step checklist...")
 
     messages = state.get("messages", [])
     if not messages:
@@ -62,6 +60,8 @@ def plan_itinerary(state: AgentState, config: dict):
     CRITICAL PLANNING RULES:
     1. VAGUE REQUESTS: If the user simply says "Plan a trip to X" with no dates, budget, or preferences, DO NOT generate a plan to build the itinerary. Instead, output a plan to: "Ask the user clarifying questions about dates, budget, and dietary preferences."
     2. PARALLEL EXECUTION: If you need to find multiple places, command the agent to use `find_and_register_place` multiple times in parallel, then command it to use `draft_add_stop` multiple times in parallel.
+    3. DEEP RESEARCH CHAINING: Actively encourage the agent to use `search_web` to discover URLs. IF AND ONLY IF the search snippets are not detailed enough, explicitly command the agent to use `read_webpage` on the specific URL returned by the search. Do NOT assume the agent will do this on its own.
+    4. PARALLEL EXECUTION (AVOID CRASHES): The Agent MUST execute tools simultaneously whenever possible. If you need to find 5 places, instruct the Agent to call `find_and_register_place` 5 times in a single JSON payload.
     
     1-SHOT EXAMPLE OF A PERFECT PLAN:
     User Request: "Let's plan day 1 in Paris. I want to visit the Louvre, get some sushi, and then see the Eiffel Tower."
@@ -71,9 +71,6 @@ def plan_itinerary(state: AgentState, config: dict):
       "Call find_and_register_place 3 times in parallel for 'The Louvre Paris', 'Best Sushi near Louvre Paris', and 'Eiffel Tower Paris'.",
       "Call draft_add_stop 3 times in parallel to add the registered locations to Day 1, ensuring the times are sequential (Morning -> Lunch -> Afternoon)."
     ]
-    
-    3. REAL-TIME DISCOVERY: Actively encourage the agent to use `search_web` to discover "what is currently popular" or "hidden gems".
-    4. PARALLEL EXECUTION (AVOID CRASHES): The Agent MUST execute tools simultaneously whenever possible. If you need to find 5 places, instruct the Agent to call `find_and_register_place` 5 times in a single JSON payload.
     5. CONVERSATIONAL PUSHBACK (HARD LIMIT): Never instruct the Agent to draft an entire multi-day trip at once. It will crash the system. Instruct the Agent: "Never draft more than 3 to 5 stops (1 day) at a time. Once you hit this limit, you MUST stop execution, present the draft, and ask the user to check the itinerary panel for approval."
     6. LONG-TERM MEMORY (AGENTIC RAG): If the user refers to past conversations, past preferences, or says things like 'remember what I told you', you MUST instruct the agent to use the `search_past_conversations` tool. If this tool returns no results, DO NOT guess or hallucinate. Instruct the agent to apologize to the user and ask them to remind you what they said.
     
@@ -102,9 +99,7 @@ def plan_itinerary(state: AgentState, config: dict):
             
         if thread_id and steps:
             formatted_steps = "\n> ".join(steps)
-            asyncio.get_event_loop().run_until_complete(
-                publish_thought(f"stream:{thread_id}", f"\n\n> Created Execution Plan:\n> {formatted_steps}\n")
-            )
+            await publish_thought(f"stream:{thread_id}", f"\n\n> Created Execution Plan:\n> {formatted_steps}\n")
         
         # Reset retry_count on new plan
         return {

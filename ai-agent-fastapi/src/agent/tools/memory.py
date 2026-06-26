@@ -12,10 +12,10 @@ logger = structlog.get_logger(__name__)
 
 class SearchFilters(BaseModel):
     semantic_query: str = Field(description="The semantic concept to search for (e.g., 'BBQ restaurant' or 'cool waterfall').")
-    time_range_days: Optional[int] = Field(description="Optional. If the user says 'yesterday' or '3 days ago', enter the number of days to temporally filter the results. E.g. 'yesterday' = 1.")
+    time_range_days: int = Field(default=0, description="If the user says 'yesterday' or '3 days ago', enter the number of days to temporally filter the results. E.g. 'yesterday' = 1. Use 0 for no time filter.")
 
 @tool("search_past_conversations", args_schema=SearchFilters)
-def search_past_conversations(semantic_query: str, time_range_days: Optional[int] = None, config: RunnableConfig = None) -> str:
+def search_past_conversations(semantic_query: str, time_range_days: int = 0, config: RunnableConfig = None) -> str:
     """
     Actively query the user's long-term memory banks. 
     Use this tool when the user references a past conversation, a past preference, or says things like 'remember what I told you'.

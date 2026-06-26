@@ -386,6 +386,7 @@ services:
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_HOST=${LANGFUSE_HOST}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
     volumes:
       - ./gcp-credentials.json:/app/gcp-credentials.json:ro
     networks:
@@ -420,6 +421,7 @@ services:
       - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
       - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
       - LANGFUSE_HOST=${LANGFUSE_HOST}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
     volumes:
       - ./gcp-credentials.json:/app/gcp-credentials.json:ro
     networks:

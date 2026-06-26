@@ -8,7 +8,7 @@ from src.core.telemetry import publish_thought
 
 logger = logging.getLogger(__name__)
 
-def inject_memories(state: AgentState, config: dict):
+async def inject_memories(state: AgentState, config: dict):
     """
     RAG Injector Node: Runs before the LLM.
     Embeds the user's latest message, searches Qdrant for semantic and deterministic facts,
@@ -57,9 +57,7 @@ def inject_memories(state: AgentState, config: dict):
             logger.info(f"Injected {len(memories)} memories into context.")
             
             if thread_id:
-                asyncio.get_event_loop().run_until_complete(
-                    publish_thought(f"stream:{thread_id}", f"\n\n> Injected {len(memories)} Passive Memories into context.\n")
-                )
+                await publish_thought(f"stream:{thread_id}", f"\n\n> Injected {len(memories)} Passive Memories into context.\n")
             
             # We return the context as a separate state variable so it doesn't pollute the permanent messages array.
             return {"rag_context": memory_context}

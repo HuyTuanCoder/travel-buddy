@@ -18,7 +18,7 @@ class CriticEvaluation(BaseModel):
         description="If invalid, provide strict, scathing feedback on exactly what went wrong and how to fix it. If valid, leave empty."
     )
 
-def evaluate_itinerary(state: AgentState, config: dict):
+async def evaluate_itinerary(state: AgentState, config: dict):
     """
     Gate 3: The Critic Node (Reflexion).
     Evaluates the agent's work. If it fails, it violently loops back to the agent.
@@ -26,9 +26,7 @@ def evaluate_itinerary(state: AgentState, config: dict):
     """
     thread_id = config.get("configurable", {}).get("thread_id", "")
     if thread_id:
-        asyncio.get_event_loop().run_until_complete(
-            publish_thought(f"stream:{thread_id}", "Critic evaluating proposed itinerary against constraints...")
-        )
+        await publish_thought(f"stream:{thread_id}", "Critic evaluating proposed itinerary against constraints...")
 
     messages = state.get("messages", [])
     retry_count = state.get("retry_count", 0)
@@ -78,10 +76,10 @@ def evaluate_itinerary(state: AgentState, config: dict):
     Draft: User is going to Tokyo. Added a stop to visit a museum at 3:00 AM.
     Constraint Log: User wants a cheap trip.
     Output:
-    {
+    {{
       "is_valid": false,
       "feedback": "CRITICAL ERROR: You scheduled a museum visit at 3:00 AM! Museums are closed. Furthermore, you failed to check if the museum is cheap. Delete this stop immediately, call search_web to find cheap museums open during the day, and draft a new stop."
-    }
+    }}
     """
     
     try:
@@ -103,33 +101,20 @@ def evaluate_itinerary(state: AgentState, config: dict):
             logger.warning(f"Critic Node: REJECTED. Feedback: {feedback}")
             
             if thread_id:
-                asyncio.get_event_loop().run_until_complete(
-                    publish_thought(f"stream:{thread_id}", f"\n\n> Critic Rejected Itinerary:\n> {feedback}\n")
-                )
+                await publish_thought(f"stream:{thread_id}", f"\n\n> Critic Rejected Itinerary:\n> {feedback}\n")
             
             # --- THE INTRA-TURN STATE COLLAPSER ---
-            # If the critic rejects, we do NOT want to append this entire failure trace 
-            # to the LangGraph state. It will bloat the context window.
-            # We will generate RemoveMessage commands for the recent failed AI & Tool messages.
-            
-            # Find the last Human Message index
-            last_human_idx = -1
-            for i in range(len(messages) - 1, -1, -1):
-                if messages[i].type == "human":
-                    last_human_idx = i
-                    break
-                    
+            # If the critic rejects, we delete the bad final AI message so it can try again
+            # WITHOUT wiping the successful tools it used in previous loops.
             drop_commands = []
-            if last_human_idx != -1:
-                # We drop everything AFTER the last human message
-                for msg in messages[last_human_idx + 1:]:
-                    if msg.id:
-                        drop_commands.append(RemoveMessage(id=msg.id))
+            if messages and messages[-1].type == "ai":
+                if messages[-1].id:
+                    drop_commands.append(RemoveMessage(id=messages[-1].id))
             
             return {
                 "critic_feedback": f"CRITIC REJECTION: {evaluation.feedback}",
                 "retry_count": retry_count + 1,
-                "messages": drop_commands # This physically deletes the bad history!
+                "messages": drop_commands # This physically deletes the bad AI response
             }
             
     except Exception as e:

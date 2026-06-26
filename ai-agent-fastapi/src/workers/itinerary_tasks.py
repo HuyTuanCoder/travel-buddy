@@ -60,6 +60,7 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                     run_id = event["run_id"]
                     if current_run_id != run_id:
                         current_run_id = run_id
+                        await publish_event(pubsub_channel, "new_run", "")
 
                     content = event["data"]["chunk"].content
                     if content and isinstance(content, str):
@@ -76,9 +77,9 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                         else:
                             status = "SUCCESS"
                             
-                            # Instantly broadcast draft_add_stop or draft_remove_stop to prevent duplicates
+                            # Instantly broadcast draft actions to prevent duplicates and sync UI
                             tool_name = event["name"]
-                            if tool_name in ["draft_add_stop", "draft_remove_stop"]:
+                            if tool_name in ["draft_add_stop", "draft_remove_stop", "draft_update_stop", "draft_move_stop_between_days"]:
                                 try:
                                     # The tool returns JSON string of the draft action
                                     action_json = json.loads(content)
@@ -107,6 +108,10 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
     except Exception as e:
         log.error("Chat task failed", exc_info=True)
         await publish_event(pubsub_channel, "error", f"Task Failed: {str(e)}")
+        await publish_event(pubsub_channel, "done", "")
+    finally:
+        if 'langfuse_handler' in locals():
+            langfuse_handler.flush()
 
 async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
     log = logger.bind(thread_id=trip_id, user_id=user_id, correlation_id=correlation_id)
@@ -150,7 +155,7 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
                     run_id = event["run_id"]
                     if current_run_id != run_id:
                         current_run_id = run_id
-                        
+                        await publish_event(pubsub_channel, "new_run", "")
                     content = event["data"]["chunk"].content
                     if content and isinstance(content, str):
                         await publish_token(pubsub_channel, content)
@@ -190,6 +195,10 @@ async def _run_approve(trip_id: str, user_id: str, correlation_id: str):
     except Exception as e:
         log.error("Tool approval task failed", exc_info=True)
         await publish_event(pubsub_channel, "error", f"Task Failed: {str(e)}")
+        await publish_event(pubsub_channel, "done", "")
+    finally:
+        if 'langfuse_handler' in locals():
+            langfuse_handler.flush()
 
 # ---------------------------------------------------------
 # Celery Sync Wrappers (The entrypoints for RabbitMQ)
