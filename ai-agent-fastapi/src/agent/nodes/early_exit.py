@@ -4,10 +4,11 @@ from src.schemas.agent import AgentState
 from src.core.config import get_llm
 from src.core.telemetry import publish_thought
 import asyncio
+from langchain_core.runnables import RunnableConfig
 
 logger = structlog.get_logger(__name__)
 
-def early_exit_node(state: AgentState, config: dict):
+async def early_exit_node(state: AgentState, config: RunnableConfig):
     """
     Gate 0.5: The Early Exit Node.
     Bypasses the entire graph if the user is just chitchatting or acting maliciously.
@@ -21,11 +22,7 @@ def early_exit_node(state: AgentState, config: dict):
     thread_id = config.get("configurable", {}).get("thread_id", "")
     if thread_id:
         try:
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(publish_thought(f"stream:{thread_id}", f"Generating fast response for {intent}..."))
-            else:
-                loop.run_until_complete(publish_thought(f"stream:{thread_id}", f"Generating fast response for {intent}..."))
+            await publish_thought(f"stream:{thread_id}", f"Generating fast response for {intent}...")
         except Exception as e:
             logger.warning(f"Failed to publish thought: {e}")
     
@@ -39,7 +36,7 @@ def early_exit_node(state: AgentState, config: dict):
         system_prompt = "The user is asking you to do something outside your domain (like write code, do math, or discuss politics). Politely decline, stating that you are an AI Travel Assistant and can only help with trip itineraries."
         
     try:
-        response = llm.invoke([
+        response = await llm.ainvoke([
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": str(messages[-1].content) if messages else ""}
         ])

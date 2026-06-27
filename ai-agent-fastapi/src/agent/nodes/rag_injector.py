@@ -5,10 +5,11 @@ from src.schemas.agent import AgentState
 from src.memory.embeddings import embed_text
 from src.memory.vector_db import search_memories
 from src.core.telemetry import publish_thought
+from langchain_core.runnables import RunnableConfig
 
 logger = logging.getLogger(__name__)
 
-async def inject_memories(state: AgentState, config: dict):
+async def inject_memories(state: AgentState, config: RunnableConfig):
     """
     RAG Injector Node: Runs before the LLM.
     Embeds the user's latest message, searches Qdrant for semantic and deterministic facts,

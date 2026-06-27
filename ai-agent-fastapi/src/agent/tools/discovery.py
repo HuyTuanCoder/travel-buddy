@@ -3,7 +3,7 @@ import requests
 import structlog
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
-from duckduckgo_search import DDGS
+
 import googlemaps
 from langchain_core.messages import SystemMessage, HumanMessage
 import grpc

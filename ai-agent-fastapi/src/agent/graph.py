@@ -5,7 +5,8 @@ from langchain_core.messages import RemoveMessage
 import logging
 
 from src.schemas.agent import AgentState
-from src.agent.nodes.llm_node import call_gemini
+from src.agent.nodes.llm_node import call_executor
+from src.agent.nodes.speaker import call_speaker
 from src.agent.nodes.validator import validate_tool_call
 from src.agent.nodes.rag_injector import inject_memories
 from src.agent.nodes.planner import plan_itinerary
@@ -13,47 +14,44 @@ from src.agent.nodes.critic import evaluate_itinerary
 from src.agent.nodes.reflection import reflection_node
 from src.agent.nodes.router import semantic_router
 from src.agent.nodes.early_exit import early_exit_node
-from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
+
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
 from src.agent.tools.draft import draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop_between_days
 from src.workers.memory_tasks import process_evicted_memory
 from src.core.telemetry import publish_thought
+from langchain_core.runnables import RunnableConfig
 
 logger = logging.getLogger(__name__)
 
 # custom router to check if llm try to call a tool
-def route_from_agent(state: AgentState):
+def route_from_executor(state: AgentState):
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
         return "validator" # Go to Validator for Schema Check
-    return "critic" # No tools, go to Gate 3: Critic Node for final text check
+    return "critic" # No tools, go to Gate 3: Critic Node for draft evaluation
 
 # custom router to check if Pydantic reject the json
 def router_from_validator(state: AgentState):
     if state.get("validation_error"):
-        return "agent" # bounce back to llm
+        return "executor" # bounce back to llm
         
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
-        commit_tool_names = ["add_stop", "remove_stop", "update_stop", "move_stop_between_days"]
-        for tc in last_message.tool_calls:
-            if tc["name"] in commit_tool_names:
-                return "commit_tools"
         return "auto_tools"
-    return "agent"
+    return "executor"
 
 # custom router to check if Critic approved or rejected
 def route_from_critic(state: AgentState):
     if state.get("critic_feedback"):
         # Critic rejected. Bounce back to agent to fix.
-        return "agent"
-    return "memory_manager" # Approved final text. Safe to process memory and end.
+        return "executor"
+    return "speaker" # Approved final text. Go to Speaker to synthesize response.
 
 # custom router to check if auto_tools returned an empty/error result
 def route_after_auto_tools(state: AgentState):
     messages = state.get("messages", [])
     if not messages:
-        return "agent"
+        return "executor"
     
     last_message = messages[-1]
     if last_message.type == "tool":
@@ -62,9 +60,9 @@ def route_after_auto_tools(state: AgentState):
         if not content or content == "[]" or content.startswith("Error:"):
             return "reflection"
             
-    return "agent"
+    return "executor"
 
-async def memory_manager(state: AgentState, config: dict):
+async def memory_manager(state: AgentState, config: RunnableConfig):
     """
     Tier 1 Context Window Manager.
     Evicts oldest messages based on Token Count to prevent parallel tool calls from wiping history.
@@ -164,7 +162,8 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     builder.add_node("early_exit", early_exit_node)
     builder.add_node("rag_injector", inject_memories)
     builder.add_node("planner", plan_itinerary)
-    builder.add_node("agent", call_gemini)
+    builder.add_node("executor", call_executor)
+    builder.add_node("speaker", call_speaker)
     builder.add_node("auto_tools", ToolNode([
         search_web, read_webpage, find_and_register_place,
         draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop_between_days
@@ -187,12 +186,12 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     builder.add_conditional_edges("semantic_router", route_from_start)
     builder.add_edge("early_exit", "memory_manager")
     
-    # RAG -> Planner -> Agent
+    # RAG -> Planner -> Executor
     builder.add_edge("rag_injector", "planner")
-    builder.add_edge("planner", "agent")
+    builder.add_edge("planner", "executor")
 
-    # conditional edge from agent
-    builder.add_conditional_edges("agent", route_from_agent)
+    # conditional edge from executor
+    builder.add_conditional_edges("executor", route_from_executor)
     
     # conditional edge from validator
     builder.add_conditional_edges("validator", router_from_validator)
@@ -202,7 +201,10 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     
     # route from auto_tools conditionally to reflection on failure
     builder.add_conditional_edges("auto_tools", route_after_auto_tools)
-    builder.add_edge("reflection", "agent")
+    builder.add_edge("reflection", "executor")
+    
+    # Speaker to memory manager
+    builder.add_edge("speaker", "memory_manager")
     
     # memory manager always ends
     builder.add_edge("memory_manager", END)

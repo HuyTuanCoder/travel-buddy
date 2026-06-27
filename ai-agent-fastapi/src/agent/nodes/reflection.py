@@ -3,10 +3,11 @@ from langchain_core.messages import AIMessage
 from src.schemas.agent import AgentState
 from src.core.config import get_llm
 from src.core.telemetry import publish_thought
+from langchain_core.runnables import RunnableConfig
 
 logger = structlog.get_logger(__name__)
 
-async def reflection_node(state: AgentState, config: dict):
+async def reflection_node(state: AgentState, config: RunnableConfig):
     """
     Post-Execution Reflection Node.
     Intercepts failed or empty tool executions and uses a low-temperature LLM

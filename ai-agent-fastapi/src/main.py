@@ -14,6 +14,13 @@ async def lifespan(app: FastAPI):
     async with AsyncPostgresSaver.from_conn_string(psycopg_url) as checkpointer:
         await checkpointer.setup()
         print("✅ LangGraph Checkpointer tables verified in Postgres!")
+        
+    from src.core.database import engine, Base
+    import src.schemas.database # Ensure models are loaded
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+        print("✅ Custom Database tables (ChatHistory, etc) verified in Postgres!")
+        
     yield
     print("🛑 Server shutting down...")
 

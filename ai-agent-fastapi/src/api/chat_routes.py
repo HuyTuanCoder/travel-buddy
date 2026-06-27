@@ -8,7 +8,7 @@ from pydantic import BaseModel
 import redis.asyncio as redis
 
 # We import the celery tasks from the modular workers directory
-from src.workers.itinerary_tasks import process_chat_message, approve_tool_call
+from src.workers.itinerary_tasks import process_chat_message
 from src.workers.setup import celery_app
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://redis:6379/0")
@@ -45,21 +45,6 @@ async def chat_endpoint(
     )
     return {"status": "accepted", "message": "Task queued for processing."}
 
-@router.post("/chat/approve", status_code=202)
-async def approve_endpoint(
-    request: ApproveRequest,
-    x_user_id: Optional[str] = Header(None),
-    x_correlation_id: Optional[str] = Header(None)
-):
-    """
-    Resumes a paused LangGraph execution by offloading the task to RabbitMQ.
-    """
-    approve_tool_call.delay(
-        trip_id=request.trip_id,
-        user_id=x_user_id or "anonymous",
-        correlation_id=x_correlation_id or "none"
-    )
-    return {"status": "accepted", "message": "Approval task queued for processing."}
 
 @router.post("/chat/finalize", status_code=202)
 async def finalize_endpoint(
@@ -92,30 +77,41 @@ async def finalize_endpoint(
 @router.get("/chat/{trip_id}/history")
 async def chat_history(trip_id: str):
     """
-    Fetches the conversation history for a given trip from the LangGraph checkpointer.
+    Fetches the conversation history for a given trip from the permanent ChatHistory table.
     """
-    from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
-    from src.core.database import DATABASE_URL
+    from src.core.database import AsyncSessionLocal
+    from src.schemas.database import ChatHistory
+    from sqlalchemy import select
+    import uuid
     
-    conn_string = DATABASE_URL.replace("+asyncpg", "")
-    async with AsyncPostgresSaver.from_conn_string(conn_string) as checkpointer:
-        config = {"configurable": {"thread_id": trip_id}}
-        state_tuple = await checkpointer.aget_tuple(config)
+    try:
+        trip_uuid = uuid.UUID(trip_id)
+    except ValueError:
+        return {"messages": []}
         
-        if not state_tuple or not state_tuple.checkpoint:
+    async with AsyncSessionLocal() as session:
+        result = await session.execute(
+            select(ChatHistory).where(ChatHistory.trip_id == trip_uuid)
+        )
+        history_record = result.scalars().first()
+        
+        if not history_record:
             return {"messages": []}
             
-        messages = state_tuple.checkpoint["channel_values"].get("messages", [])
+        messages = history_record.messages
         
         # Format the Langchain messages for the frontend
         formatted_history = []
         for msg in messages:
-            if msg.type == "human":
-                formatted_history.append({"id": msg.id, "role": "user", "content": str(msg.content)})
-            elif msg.type == "ai":
-                # Filter out empty AI messages that might just be tool calls
-                if msg.content:
-                    formatted_history.append({"id": msg.id, "role": "agent", "content": str(msg.content)})
+            msg_type = msg.get("type", "")
+            msg_content = msg.get("content", "")
+            msg_id = msg.get("id", "")
+            
+            if msg_type == "human":
+                formatted_history.append({"id": msg_id, "role": "user", "content": str(msg_content)})
+            elif msg_type == "ai":
+                if msg_content:
+                    formatted_history.append({"id": msg_id, "role": "agent", "content": str(msg_content)})
                 
         return {"messages": formatted_history}
 

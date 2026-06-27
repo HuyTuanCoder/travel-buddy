@@ -7,6 +7,7 @@ import os
 from src.schemas.agent import AgentState
 from src.core.config import get_llm
 from src.core.telemetry import publish_thought
+from langchain_core.runnables import RunnableConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -15,7 +16,7 @@ class PlanChecklist(BaseModel):
         description="A strict, step-by-step checklist of actions to fulfill the user's request."
     )
 
-async def plan_itinerary(state: AgentState, config: dict):
+async def plan_itinerary(state: AgentState, config: RunnableConfig):
     """
     Gate 1: The Planner Node.
     Forces the AI to generate a strict reasoning trace before executing tools.

@@ -7,6 +7,7 @@ import os
 from src.schemas.agent import AgentState
 from src.core.config import get_llm
 from src.core.telemetry import publish_thought
+from langchain_core.runnables import RunnableConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -18,7 +19,7 @@ class CriticEvaluation(BaseModel):
         description="If invalid, provide strict, scathing feedback on exactly what went wrong and how to fix it. If valid, leave empty."
     )
 
-async def evaluate_itinerary(state: AgentState, config: dict):
+async def evaluate_itinerary(state: AgentState, config: RunnableConfig):
     """
     Gate 3: The Critic Node (Reflexion).
     Evaluates the agent's work. If it fails, it violently loops back to the agent.

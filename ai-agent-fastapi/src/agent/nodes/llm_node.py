@@ -2,12 +2,13 @@ import structlog
 import os
 from langchain_core.messages import SystemMessage
 from src.schemas.agent import AgentState
-from src.agent.tools.itinerary import add_stop, remove_stop, update_stop, move_stop_between_days
+
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
 from src.agent.tools.memory import search_past_conversations
 from src.agent.tools.draft import draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop_between_days
 from src.core.config import get_llm
 import json
+from langchain_core.runnables import RunnableConfig
 
 logger = structlog.get_logger(__name__)
 
@@ -16,7 +17,7 @@ ALL_TOOLS = [
     draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop_between_days
 ]
 
-async def call_gemini(state: AgentState, config: dict):
+async def call_executor(state: AgentState, config: RunnableConfig):
     # Instantiate LLM inside the function to avoid gRPC event loop binding issues in Celery prefork workers.
     # planner.py and critic.py already do this correctly.
     llm = get_llm()
