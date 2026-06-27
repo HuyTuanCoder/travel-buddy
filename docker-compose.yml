@@ -344,7 +344,6 @@ services:
     networks:
       - travel-buddy-network
 
-  # Langfuse Server: The UI Dashboard for LLMOps and prompt tracking
   langfuse:
     image: langfuse/langfuse:2
     container_name: travel-buddy-langfuse

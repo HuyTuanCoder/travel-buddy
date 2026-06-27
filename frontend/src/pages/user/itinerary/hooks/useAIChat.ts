@@ -11,11 +11,7 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
   const [currentThought, setCurrentThought] = useState<string>('');
   const [isThinking, setIsThinking] = useState<boolean>(false);
 
-  // Refs for simulating smooth typewriter streaming
   const eventSourceRef = useRef<EventSource | null>(null);
-  const streamBufferRef = useRef<string>('');
-  const flushIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const isStreamCompleteRef = useRef<boolean>(false);
 
   useEffect(() => {
     let mounted = true;
@@ -69,46 +65,21 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
 
           case 'token':
             setIsThinking(true); // Ensure thinking stays true until 'done'
-            streamBufferRef.current += data.content;
             
-            // Start the typewriter loop if it's not already running
-            if (!flushIntervalRef.current) {
-              flushIntervalRef.current = setInterval(() => {
-                if (streamBufferRef.current.length > 0) {
-                  // Pop 2 characters at a time for a natural reading speed
-                  const chars = streamBufferRef.current.substring(0, 2);
-                  streamBufferRef.current = streamBufferRef.current.substring(2);
-                  
-                  setMessages((prev) => {
-                    const lastMsg = prev[prev.length - 1];
-                    if (lastMsg && lastMsg.role === 'agent' && lastMsg.isStreaming) {
-                      const updated = [...prev];
-                      updated[updated.length - 1] = {
-                        ...lastMsg,
-                        content: lastMsg.content + chars
-                      };
-                      return updated;
-                    } else {
-                      return [...prev, { id: crypto.randomUUID(), role: 'agent', content: chars, isStreaming: true }];
-                    }
-                  });
-                } else if (isStreamCompleteRef.current) {
-                  // Buffer is empty AND stream is done -> finalize the bubble
-                  setMessages((prev) => {
-                    const updated = [...prev];
-                    if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
-                      updated[updated.length - 1].isStreaming = false;
-                    }
-                    return updated;
-                  });
-                  if (flushIntervalRef.current) {
-                    clearInterval(flushIntervalRef.current);
-                    flushIntervalRef.current = null;
-                  }
-                  isStreamCompleteRef.current = false;
-                }
-              }, 15); // 15ms per 2 chars is smoother and prevents huge backlogs
-            }
+            // Instantly append to the streaming agent message
+            setMessages((prev) => {
+              const lastMsg = prev[prev.length - 1];
+              if (lastMsg && lastMsg.role === 'agent' && lastMsg.isStreaming) {
+                const updated = [...prev];
+                updated[updated.length - 1] = {
+                  ...lastMsg,
+                  content: lastMsg.content + data.content
+                };
+                return updated;
+              } else {
+                return [...prev, { id: crypto.randomUUID(), role: 'agent', content: data.content, isStreaming: true }];
+              }
+            });
             break;
 
           case 'draft_update':
@@ -123,38 +94,26 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
             break;
 
           case 'new_run':
-            // Instantly flush the remaining buffer for the OLD run, so the new run gets a fresh bubble
-            if (streamBufferRef.current.length > 0) {
-              const remaining = streamBufferRef.current;
-              streamBufferRef.current = '';
-              setMessages((prev) => {
-                const updated = [...prev];
-                if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
-                  const lastMsg = updated[updated.length - 1];
-                  updated[updated.length - 1] = {
-                    ...lastMsg,
-                    content: lastMsg.content + remaining,
-                    isStreaming: false
-                  };
-                }
-                return updated;
-              });
-            } else {
-              setMessages((prev) => {
-                const updated = [...prev];
-                if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
-                  updated[updated.length - 1].isStreaming = false;
-                }
-                return updated;
-              });
-            }
+            // Not used anymore by backend, but safe to keep handler as a no-op finalize
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
+                updated[updated.length - 1].isStreaming = false;
+              }
+              return updated;
+            });
             break;
 
           case 'done':
-            // Just mark the stream as complete. The interval will drain the buffer and close it naturally.
-            isStreamCompleteRef.current = true;
             setIsThinking(false);
             setCurrentThought('');
+            setMessages((prev) => {
+              const updated = [...prev];
+              if (updated.length > 0 && updated[updated.length - 1].isStreaming) {
+                updated[updated.length - 1].isStreaming = false;
+              }
+              return updated;
+            });
             if (eventSourceRef.current) {
               eventSourceRef.current.close();
             }
@@ -188,10 +147,6 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
-      }
-      if (flushIntervalRef.current) {
-        clearInterval(flushIntervalRef.current);
-        flushIntervalRef.current = null;
       }
     };
   }, [connectStream]);
