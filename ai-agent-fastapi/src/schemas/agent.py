@@ -39,3 +39,7 @@ class AgentState(TypedDict):
     # 9. Semantic Intent (Gate 0)
     # The classification of the user's latest message (e.g. TRAVEL_PLANNING, CHITCHAT)
     intent: str
+    
+    # 10. Co-Drafting Metadata
+    # Tracks which stops the user has manually touched in the frontend sandbox.
+    user_modifications: dict

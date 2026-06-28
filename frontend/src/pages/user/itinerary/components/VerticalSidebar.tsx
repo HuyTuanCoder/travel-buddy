@@ -1,18 +1,10 @@
 import type { LucideIcon } from 'lucide-react'
 
-export default function VerticalSidebar({
-  icon: Icon,
-  label,
-  onClick,
-  position,
-  tabs
-}: {
-  icon?: LucideIcon
-  label?: string
-  onClick?: () => void
-  position: 'left' | 'right'
+interface VerticalSidebarProps {
   tabs: { id: string; icon: LucideIcon; label: string; onClick: () => void; isActive?: boolean }[]
-}) {
+}
+
+export default function VerticalSidebar({ tabs }: VerticalSidebarProps) {
   return (
     <div 
       className="w-14 shrink-0 border-r border-slate-200 flex flex-col items-center py-4 bg-white z-10 space-y-4"

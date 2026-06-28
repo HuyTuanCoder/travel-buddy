@@ -22,6 +22,7 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
     log.info("Starting AI chat task")
     
     pubsub_channel = f"stream:{trip_id}"
+    fallback_msg = None
     
     try:
         await publish_thought(pubsub_channel, "AI is processing your request...")
@@ -34,7 +35,12 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                 "messages": [("user", message)]
             }
             if itinerary_draft is not None:
-                inputs["itinerary_draft"] = itinerary_draft
+                # The frontend sends a bundle: { "itinerary": {...}, "metadata": {...} }
+                if isinstance(itinerary_draft, dict) and "itinerary" in itinerary_draft:
+                    inputs["itinerary_draft"] = itinerary_draft.get("itinerary")
+                    inputs["user_modifications"] = itinerary_draft.get("metadata", {})
+                else:
+                    inputs["itinerary_draft"] = itinerary_draft
             
             config = {
                 "configurable": {"thread_id": trip_id, "user_id": user_id},
@@ -110,7 +116,38 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                 
             except Exception as e:
                 log.error("Chat task failed during graph execution", exc_info=True)
-                await publish_event(pubsub_channel, "error", f"Task Failed: {str(e)}")
+                
+                # Graceful Error Handoff: Output the raw error to the AI thought frontend
+                await publish_event(pubsub_channel, "thought", f"\n> [SYSTEM ERROR]: {str(e)}\n> Handing off to Speaker for graceful recovery...\n")
+                
+                try:
+                    from src.agent.nodes.speaker import call_speaker
+                    
+                    # Grab the latest state from the checkpoint
+                    final_state = await app_graph.aget_state(config)
+                    current_state = final_state.values if final_state.values else {}
+                    
+                    # Inject the error so the speaker knows what happened
+                    current_summary = current_state.get("running_summary", "")
+                    current_state["running_summary"] = current_summary + f"\n[CRITICAL SYSTEM ERROR OCCURRED]: {str(e)}. The background task failed. You must apologize to the user and explain that you could not complete their last request due to a technical error."
+                    
+                    # Call the speaker node directly to synthesize the final response
+                    speaker_result = await call_speaker(current_state, config)
+                    
+                    # Stream the speaker's response to the frontend chat bubble
+                    fallback_response = speaker_result["messages"][0]
+                    words = str(fallback_response.content).split(" ")
+                    for i, word in enumerate(words):
+                        chunk = word + " " if i < len(words) - 1 else word
+                        await publish_token(pubsub_channel, chunk)
+                        await asyncio.sleep(0.02)
+                        
+                    # Save this fallback response so it gets logged to ChatHistory DB below
+                    fallback_msg = fallback_response
+                        
+                except Exception as fallback_e:
+                    log.error(f"Speaker fallback failed: {fallback_e}")
+                    await publish_event(pubsub_channel, "error", "I'm sorry, I encountered a critical internal system error and could not complete your request. Please try again.")
             finally:
                 # --- CHAT HISTORY DB MIGRATION ---
                 # Guarantee that whatever is in the checkpointer gets flushed to ChatHistory
@@ -125,9 +162,12 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                 }
                 
                 # 2. Isolate the Speaker's pristine final response from the LangGraph state
-                final_state = await app_graph.aget_state(config)
-                final_messages = final_state.values.get("messages", []) if final_state.values else []
-                speaker_msg = final_messages[-1] if final_messages else None
+                if fallback_msg:
+                    speaker_msg = fallback_msg
+                else:
+                    final_state = await app_graph.aget_state(config)
+                    final_messages = final_state.values.get("messages", []) if final_state.values else []
+                    speaker_msg = final_messages[-1] if final_messages else None
                 
                 clean_delta = [user_msg_dict]
                 
@@ -149,7 +189,7 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                 async with AsyncSessionLocal() as session:
                     # Try to atomically append to the JSONB array without reading it
                     update_query = text(
-                        "UPDATE chat_history SET messages = messages || :new_msgs::jsonb "
+                        "UPDATE chat_history SET messages = messages || CAST(:new_msgs AS jsonb) "
                         "WHERE trip_id = :trip_id RETURNING id"
                     )
                     result = await session.execute(
@@ -161,7 +201,7 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                         # If no row was updated, the trip doesn't exist in ChatHistory yet, so insert it
                         insert_query = text(
                             "INSERT INTO chat_history (id, user_id, trip_id, messages) "
-                            "VALUES (:id, :user_id, :trip_id, :msgs::jsonb)"
+                            "VALUES (:id, :user_id, :trip_id, CAST(:msgs AS jsonb))"
                         )
                         await session.execute(
                             insert_query,
@@ -178,9 +218,28 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                 await publish_event(pubsub_channel, "done", "")
                 
     except Exception as e:
-        log.error("Fatal error connecting to checkpointer or DB", exc_info=True)
-        await publish_event(pubsub_channel, "error", f"System Error: {str(e)}")
-        await publish_event(pubsub_channel, "done", "")
+        log.error("Fatal graph error intercepted", exc_info=True)
+        await publish_thought(pubsub_channel, "Encountered a system error. Recovering...")
+        
+        try:
+            from src.core.config import get_llm
+            from langchain_core.messages import AIMessage
+            llm = get_llm(temperature=0.4)
+            fallback_msg = await llm.ainvoke([
+                {"role": "system", "content": "You are a Travel Assistant. The system just crashed while trying to fulfill the user's request. Apologize politely and tell them to try again."},
+                {"role": "user", "content": message}
+            ], config=config)
+            
+            # Stream the fallback message cleanly
+            await publish_event(pubsub_channel, "token", fallback_msg.content)
+            await publish_event(pubsub_channel, "done", "")
+        except Exception as inner_e:
+            log.error("Fallback LLM failed", exc_info=True)
+            # Hardcoded failsafe if even the LLM crashes
+            from langchain_core.messages import AIMessage
+            fallback_msg = AIMessage(content="I'm so sorry, but I encountered a critical system error while planning this. Please try again.")
+            await publish_event(pubsub_channel, "token", fallback_msg.content)
+            await publish_event(pubsub_channel, "done", "")
 
 # ---------------------------------------------------------
 # Celery Sync Wrappers (The entrypoints for RabbitMQ)

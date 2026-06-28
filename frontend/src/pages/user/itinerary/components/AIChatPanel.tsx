@@ -8,10 +8,12 @@ import { useAIChat } from '../hooks/useAIChat';
 interface AIChatPanelProps {
   tripId: string;
   workspaceDraft: any;
+  modifiedStops: any;
+  isDraftMode: boolean;
   onDraftReceived?: (draftStops: any[]) => void;
 }
 
-export default function AIChatPanel({ tripId, workspaceDraft, onDraftReceived }: AIChatPanelProps) {
+export default function AIChatPanel({ tripId, workspaceDraft, modifiedStops, isDraftMode, onDraftReceived }: AIChatPanelProps) {
   const { messages, currentThought, isThinking, sendMessage } = useAIChat(tripId, { onDraftReceived });
   const [input, setInput] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -26,7 +28,7 @@ export default function AIChatPanel({ tripId, workspaceDraft, onDraftReceived }:
 
   const handleSend = () => {
     if (!input.trim() || isThinking) return;
-    sendMessage(input, workspaceDraft);
+    sendMessage(input, workspaceDraft, modifiedStops, isDraftMode);
     setInput('');
   };
 

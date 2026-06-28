@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getItineraryDetail, updateItinerary, deleteItinerary, batchUpdateItinerary } from '@/services/itinerary/itineraryService'
 import { getMembers, inviteMember, removeMember, updateMemberRole, transferOwnership } from '@/services/itinerary/memberService'
-import { addDay, removeDay, addStop, updateStop, removeStop, reorderStops } from '@/services/itinerary/timelineService'
+import { addDay, removeDay, addStop, updateStop, removeStop, reorderStops, moveStop } from '@/services/itinerary/timelineService'
 import type {
   ItineraryDetailResponse,
   MemberListResponse,
@@ -20,6 +20,7 @@ import type {
 interface DetailState {
   itinerary: ItineraryDetailResponse | null
   draftItinerary: ItineraryDetailResponse | null
+  isDraftMode: boolean
   modifiedStops: Record<string, { isAiModified?: boolean; isUserModified?: boolean }>
   members: MemberListResponse | null
   isLoading: boolean
@@ -32,6 +33,7 @@ export function useItineraryDetailLogic(itineraryId: string) {
   const [state, setState] = useState<DetailState>({
     itinerary: null,
     draftItinerary: null,
+    isDraftMode: false,
     modifiedStops: {},
     members: null,
     isLoading: true,
@@ -56,6 +58,7 @@ export function useItineraryDetailLogic(itineraryId: string) {
       setState({
         itinerary: detail,
         draftItinerary: JSON.parse(JSON.stringify(detail)), // Deep clone for draft
+        isDraftMode: false, // Reset draft mode on fetch
         modifiedStops: {}, // Reset modifications on fresh fetch
         members: memberList,
         isLoading: false,
@@ -106,6 +109,23 @@ export function useItineraryDetailLogic(itineraryId: string) {
 
   // Append a new day to the timeline
   const handleAddDay = async (payload: AddDayRequest) => {
+    if (state.isDraftMode) {
+      setState(prev => {
+        if (!prev.draftItinerary) return prev
+        const newDraft = JSON.parse(JSON.stringify(prev.draftItinerary))
+        const tempDay = {
+          id: `temp-day-${Date.now()}`,
+          itineraryId,
+          dayNumber: newDraft.days.length + 1,
+          scheduledDate: payload.scheduledDate,
+          stops: []
+        }
+        newDraft.days.push(tempDay)
+        return { ...prev, draftItinerary: newDraft }
+      })
+      return
+    }
+
     try {
       await addDay(itineraryId, payload)
       await fetchDetail()
@@ -119,6 +139,16 @@ export function useItineraryDetailLogic(itineraryId: string) {
 
   // Remove a day and its stops
   const handleRemoveDay = async (dayId: string) => {
+    if (state.isDraftMode) {
+      setState(prev => {
+        if (!prev.draftItinerary) return prev
+        const newDraft = JSON.parse(JSON.stringify(prev.draftItinerary))
+        newDraft.days = newDraft.days.filter((d: any) => d.id !== dayId)
+        return { ...prev, draftItinerary: newDraft }
+      })
+      return
+    }
+
     try {
       await removeDay(dayId)
       await fetchDetail()
@@ -185,7 +215,27 @@ export function useItineraryDetailLogic(itineraryId: string) {
     }
   }
 
+  // Move a stop to a different day
+  const handleMoveStop = async (stopId: string, targetDayId: string, targetVisitOrder?: number) => {
+    try {
+      await moveStop(stopId, { targetDayId, targetVisitOrder })
+      await fetchDetail()
+    } catch (err: any) {
+      setState((prev) => ({
+        ...prev,
+        error: err?.message ?? 'Failed to move stop.',
+      }))
+    }
+  }
+
   // ==================== Draft / Co-Drafting Actions ====================
+
+  const toggleDraftMode = (force?: boolean) => {
+    setState((prev) => ({
+      ...prev,
+      isDraftMode: force !== undefined ? force : !prev.isDraftMode
+    }))
+  }
 
   // Apply an AI or User modification to the local draft state only
   const handleDraftUpdate = (
@@ -206,7 +256,7 @@ export function useItineraryDetailLogic(itineraryId: string) {
         if (source === 'USER') newModifiedStops[id].isUserModified = true
       })
 
-      return { ...prev, draftItinerary: newDraft, modifiedStops: newModifiedStops }
+      return { ...prev, isDraftMode: true, draftItinerary: newDraft, modifiedStops: newModifiedStops }
     })
   }
 
@@ -226,7 +276,7 @@ export function useItineraryDetailLogic(itineraryId: string) {
       if (!newModifiedStops[movedStop.id]) newModifiedStops[movedStop.id] = {}
       newModifiedStops[movedStop.id].isUserModified = true
 
-      return { ...prev, draftItinerary: newDraft, modifiedStops: newModifiedStops }
+      return { ...prev, isDraftMode: true, draftItinerary: newDraft, modifiedStops: newModifiedStops }
     })
   }
 
@@ -261,7 +311,7 @@ export function useItineraryDetailLogic(itineraryId: string) {
       for (const day of newDraft.days) {
         day.stops = day.stops.filter((s: any) => s.id !== stopId)
       }
-      return { ...prev, draftItinerary: newDraft }
+      return { ...prev, isDraftMode: true, draftItinerary: newDraft }
     })
   }
 
@@ -270,6 +320,7 @@ export function useItineraryDetailLogic(itineraryId: string) {
     setState((prev) => ({
       ...prev,
       draftItinerary: prev.itinerary ? JSON.parse(JSON.stringify(prev.itinerary)) : null,
+      isDraftMode: false,
       modifiedStops: {}
     }))
   }
@@ -302,6 +353,7 @@ export function useItineraryDetailLogic(itineraryId: string) {
         ...prev,
         itinerary: updatedDetail,
         draftItinerary: JSON.parse(JSON.stringify(updatedDetail)),
+        isDraftMode: false,
         modifiedStops: {},
         isLoading: false,
       }))
@@ -379,6 +431,7 @@ export function useItineraryDetailLogic(itineraryId: string) {
     // State
     itinerary: state.itinerary,
     draftItinerary: state.draftItinerary,
+    isDraftMode: state.isDraftMode,
     modifiedStops: state.modifiedStops,
     members: state.members,
     isLoading: state.isLoading,
@@ -399,14 +452,17 @@ export function useItineraryDetailLogic(itineraryId: string) {
     handleUpdateStop,
     handleRemoveStop,
     handleReorderStops,
+    handleMoveStop,
 
     // Draft Actions (UI Overlay)
     handleDraftReorderStops,
+    toggleDraftMode,
     handleDraftAddStop,
     handleDraftUpdateStop,
     handleDraftRemoveStop,
     handleDraftDiscard,
     handleDraftSave,
+    handleDraftUpdate,
 
     // Member actions
     handleInvite,

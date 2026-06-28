@@ -42,8 +42,10 @@ async def plan_itinerary(state: AgentState, config: RunnableConfig):
     # Extract the RAG context and the current draft from the state
     rag_context = state.get("rag_context", "")
     itinerary_draft = state.get("itinerary_draft", {})
+    user_modifications = state.get("user_modifications", {})
     import json
     draft_context = json.dumps(itinerary_draft, indent=2) if itinerary_draft else "The draft is currently empty."
+    user_mod_context = json.dumps(user_modifications, indent=2) if user_modifications else "No manual user modifications detected."
             
     system_prompt = f"""
     You are the Master Itinerary Planner. 
@@ -58,22 +60,40 @@ async def plan_itinerary(state: AgentState, config: RunnableConfig):
     CURRENT ITINERARY DRAFT:
     {draft_context}
     
+    USER MODIFICATIONS METADATA (Hierarchy of Truth - Level 2):
+    {user_mod_context}
+    
+    CRITICAL INSTRUCTIONS:
+    1. Hierarchy of Truth: 
+       - LEVEL 1 (Highest): The User's Latest Request below. If they ask to override a rule or a manual edit, you MUST obey.
+       - LEVEL 2: The USER MODIFICATIONS METADATA. If a stop has `isUserModified: true` in this JSON, it means the user explicitly dragged/edited it in their UI sandbox. Treat it as UNTOUCHABLE ground truth. DO NOT move or delete it unless Level 1 explicitly asked you to!
+       - LEVEL 3 (Lowest): Previous known constraints (RAG Context).
+       
+       2. Dynamic Incremental Drafting:
+       - Assess how much detail the user provided in their Latest Request.
+       - If they ask for a massive multi-day trip but provide almost NO specifics (e.g. "Plan a 14 day trip"), use `draft_add_day` in parallel to create the skeleton (Days 1-14), but ONLY populate Day 1 with `draft_add_stop`. Stop there and ask for feedback!
+       - HOWEVER, if they explicitly outline their ideas for multiple days (e.g. "Day 1 Beach, Day 2 Museum"), boldly generate all those days in full to match their detail. Use your judgement.
+    
     CRITICAL PLANNING RULES:
     1. VAGUE REQUESTS: If the user simply says "Plan a trip to X" with no dates, budget, or preferences, DO NOT generate a plan to build the itinerary. Instead, output a plan to: "Ask the user clarifying questions about dates, budget, and dietary preferences."
-    2. PARALLEL EXECUTION: If you need to find multiple places, command the agent to use `find_and_register_place` multiple times in parallel, then command it to use `draft_add_stop` multiple times in parallel.
+    
+    2. EXECUTION WAVES (CRITICAL DEPENDENCY CHAIN): 
+       You MUST structure your plan in sequential waves, while encouraging parallel execution INSIDE each wave. The Agent CANNOT call `draft_add_stop` if it doesn't have a `google_place_id` yet!
+       - WAVE 1 (Structure & Discovery): Instruct the Agent to call `draft_add_day` (multiple times in parallel if needed) AND `search_web` in parallel. Then WAIT for results.
+       - WAVE 2 (Registration): Instruct the Agent to call `find_and_register_place` multiple times in parallel for the discovered places. Then WAIT for the IDs.
+       - WAVE 3 (Drafting): Instruct the Agent to call `draft_add_stop` multiple times in parallel using the registered IDs.
+       
     3. DEEP RESEARCH CHAINING: Actively encourage the agent to use `search_web` to discover URLs. IF AND ONLY IF the search snippets are not detailed enough, explicitly command the agent to use `read_webpage` on the specific URL returned by the search. Do NOT assume the agent will do this on its own.
-    4. PARALLEL EXECUTION (AVOID CRASHES): The Agent MUST execute tools simultaneously whenever possible. If you need to find 5 places, instruct the Agent to call `find_and_register_place` 5 times in a single JSON payload.
     
     1-SHOT EXAMPLE OF A PERFECT PLAN:
     User Request: "Let's plan day 1 in Paris. I want to visit the Louvre, get some sushi, and then see the Eiffel Tower."
     Output:
     [
-      "Check RAG constraints to see if the user has a budget or specific sushi preference.",
-      "Call find_and_register_place 3 times in parallel for 'The Louvre Paris', 'Best Sushi near Louvre Paris', and 'Eiffel Tower Paris'.",
-      "Call draft_add_stop 3 times in parallel to add the registered locations to Day 1, ensuring the times are sequential (Morning -> Lunch -> Afternoon)."
+      "WAVE 1: Check RAG constraints for sushi preferences. Call search_web to find the best sushi near the Louvre.",
+      "WAVE 2: Call find_and_register_place 3 times in parallel for 'The Louvre Paris', 'The Sushi Restaurant you found', and 'Eiffel Tower Paris'.",
+      "WAVE 3: Call draft_add_stop 3 times in parallel to add the registered locations to Day 1, ensuring the times are sequential (Morning -> Lunch -> Afternoon)."
     ]
-    5. CONVERSATIONAL PUSHBACK (HARD LIMIT): Never instruct the Agent to draft an entire multi-day trip at once. It will crash the system. Instruct the Agent: "Never draft more than 3 to 5 stops (1 day) at a time. Once you hit this limit, you MUST stop execution, present the draft, and ask the user to check the itinerary panel for approval."
-    6. LONG-TERM MEMORY (AGENTIC RAG): If the user refers to past conversations, past preferences, or says things like 'remember what I told you', you MUST instruct the agent to use the `search_past_conversations` tool. If this tool returns no results, DO NOT guess or hallucinate. Instruct the agent to apologize to the user and ask them to remind you what they said.
+    5. LONG-TERM MEMORY (AGENTIC RAG): If the user refers to past conversations, past preferences, or says things like 'remember what I told you', you MUST instruct the agent to use the `search_past_conversations` tool. If this tool returns no results, DO NOT guess or hallucinate. Instruct the agent to apologize to the user and ask them to remind you what they said.
     
     Do NOT execute the actions. Just write the checklist.
     Example Vague: ["Push back and ask user for trip duration, budget, and preferences"]

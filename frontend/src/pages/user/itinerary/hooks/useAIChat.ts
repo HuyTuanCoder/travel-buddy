@@ -26,7 +26,7 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
       }
     };
     fetchHistory();
-    
+
     return () => {
       mounted = false;
     };
@@ -65,7 +65,7 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
 
           case 'token':
             setIsThinking(true); // Ensure thinking stays true until 'done'
-            
+
             // Instantly append to the streaming agent message
             setMessages((prev) => {
               const lastMsg = prev[prev.length - 1];
@@ -84,7 +84,9 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
 
           case 'draft_update':
             try {
-              const draftData = JSON.parse(data.content);
+              let draftData = JSON.parse(data.content);
+              // Ensure draftData is an array to fix the .forEach crash
+              if (!Array.isArray(draftData)) draftData = [draftData];
               if (options?.onDraftReceived) {
                 options.onDraftReceived(draftData);
               }
@@ -151,7 +153,7 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
     };
   }, [connectStream]);
 
-  const sendMessage = useCallback(async (text: string, workspaceDraft?: any) => {
+  const sendMessage = useCallback(async (text: string, workspaceDraft?: any, modifiedStops?: any, isDraftMode?: boolean) => {
     // Optimistically add user message
     setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'user', content: text }]);
 
@@ -166,7 +168,11 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
 
     try {
       connectStream();
-      await chatService.sendMessage(tripId, text, workspaceDraft);
+      // Only send the draft if we are actively in Draft Mode.
+      // If we are not in Draft Mode (e.g. pristine state), we send null to ensure 
+      // the backend checkpointer wipes its draft memory to maintain Client-Authoritative State.
+      const payloadToSend = isDraftMode ? { itinerary: workspaceDraft, metadata: modifiedStops } : null;
+      await chatService.sendMessage(tripId, text, payloadToSend);
     } catch (err) {
       console.error("Failed to send message", err);
       setMessages(prev => [...prev, { id: crypto.randomUUID(), role: 'agent', content: "**System Error:** Could not reach AI backend." }]);

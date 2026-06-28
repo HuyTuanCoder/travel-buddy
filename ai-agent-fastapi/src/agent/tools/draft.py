@@ -18,6 +18,12 @@ class DraftRemoveStopArgs(BaseModel):
     google_place_id: str = Field(description="The Google Place ID of the stop to remove from the draft.")
     day_number: int = Field(description="The day number the stop is currently on.")
 
+class DraftAddDayArgs(BaseModel):
+    scheduled_date: str = Field(default="", description="Optional date for the new day in YYYY-MM-DD format.")
+
+class DraftRemoveDayArgs(BaseModel):
+    day_number: int = Field(description="The day number to completely remove.")
+
 # 2. Tool Bindings
 
 @tool("draft_add_stop", args_schema=DraftAddStopArgs)
@@ -51,6 +57,7 @@ class DraftMoveStopArgs(BaseModel):
     google_place_id: str = Field(description="The Google Place ID of the stop to move.")
     old_day_number: int = Field(description="The day number the stop is currently on.")
     new_day_number: int = Field(description="The day number to move the stop to.")
+    new_visit_order: int = Field(default=None, description="Optional. The exact 0-indexed position to place the stop in the new day. If moving within the same day, use this to reorder.")
 
 @tool("draft_remove_stop", args_schema=DraftRemoveStopArgs)
 def draft_remove_stop(google_place_id: str, day_number: int) -> str:
@@ -80,10 +87,10 @@ def draft_update_stop(google_place_id: str, day_number: int, user_notes: str = "
     }
     return json.dumps(draft_item)
 
-@tool("draft_move_stop_between_days", args_schema=DraftMoveStopArgs)
-def draft_move_stop_between_days(google_place_id: str, old_day_number: int, new_day_number: int) -> str:
+@tool("draft_move_stop", args_schema=DraftMoveStopArgs)
+def draft_move_stop(google_place_id: str, old_day_number: int, new_day_number: int, new_visit_order: int = None) -> str:
     """
-    Call this tool to move a stop from one day to another in the itinerary DRAFT in memory.
+    Call this tool to move a stop across days OR reorder it within the same day.
     """
     draft_item = {
         "action": "move",
@@ -91,4 +98,26 @@ def draft_move_stop_between_days(google_place_id: str, old_day_number: int, new_
         "old_day_number": old_day_number,
         "new_day_number": new_day_number
     }
+    if new_visit_order is not None:
+        draft_item["new_visit_order"] = new_visit_order
     return json.dumps(draft_item)
+
+@tool("draft_add_day", args_schema=DraftAddDayArgs)
+def draft_add_day(scheduled_date: str = "") -> str:
+    """
+    Call this tool to append a new day to the itinerary DRAFT.
+    """
+    return json.dumps({
+        "action": "add_day",
+        "scheduled_date": scheduled_date
+    })
+
+@tool("draft_remove_day", args_schema=DraftRemoveDayArgs)
+def draft_remove_day(day_number: int) -> str:
+    """
+    Call this tool to remove an entire day and its stops from the itinerary DRAFT.
+    """
+    return json.dumps({
+        "action": "remove_day",
+        "day_number": day_number
+    })

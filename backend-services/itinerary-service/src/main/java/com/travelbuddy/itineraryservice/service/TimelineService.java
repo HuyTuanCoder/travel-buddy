@@ -184,17 +184,17 @@ public class TimelineService {
     log.info("[removeStop] <<< Output: stop {} deleted", stopId);
   }
 
-  // ==================== POST /itineraries/stops/{stopId}/move ====================
+  // ==================== PUT /itineraries/stops/{stopId}/move ====================
 
   @Transactional
-  public TripStopResponse moveStop(UUID stopId, UUID targetDayId, String userId) {
-    log.info("[moveStop] >>> Input: stopId={}, targetDayId={}, userId={}", stopId, targetDayId, userId);
+  public TripStopResponse moveStop(UUID stopId, MoveStopRequest request, String userId) {
+    log.info("[moveStop] >>> Input: stopId={}, targetDayId={}, userId={}", stopId, request.getTargetDayId(), userId);
 
     TripStop oldStop = stopRepository.findById(stopId)
         .orElseThrow(() -> new ItineraryNotFoundException("Stop not found: " + stopId));
 
-    ItineraryDay targetDay = dayRepository.findById(targetDayId)
-        .orElseThrow(() -> new ItineraryNotFoundException("Target Day not found: " + targetDayId));
+    ItineraryDay targetDay = dayRepository.findById(request.getTargetDayId())
+        .orElseThrow(() -> new ItineraryNotFoundException("Target Day not found: " + request.getTargetDayId()));
 
     UUID itineraryId = oldStop.getItineraryDay().getItinerary().getId();
     UUID targetItineraryId = targetDay.getItinerary().getId();
@@ -206,16 +206,18 @@ public class TimelineService {
     accessGuard.verifyEditPermission(itineraryId, userId);
 
     // Calculate visit order for new day
-    int nextVisitOrder = stopRepository.findMaxVisitOrderByDayId(targetDayId)
+    int nextVisitOrder = stopRepository.findMaxVisitOrderByDayId(request.getTargetDayId())
         .map(max -> max + 1)
         .orElse(1);
+        
+    int finalVisitOrder = request.getTargetVisitOrder() != null ? request.getTargetVisitOrder() : nextVisitOrder;
 
     // Create a new stop instance because itineraryDay is not updatable
     TripStop newStop = new TripStop();
     newStop.setItineraryDay(targetDay);
     newStop.setGooglePlaceId(oldStop.getGooglePlaceId());
     newStop.setStopType(oldStop.getStopType());
-    newStop.setVisitOrder(nextVisitOrder);
+    newStop.setVisitOrder(finalVisitOrder);
     newStop.setArrivalTime(oldStop.getArrivalTime());
     newStop.setDepartureTime(oldStop.getDepartureTime());
     newStop.setEstimatedCost(oldStop.getEstimatedCost());
@@ -224,6 +226,21 @@ public class TimelineService {
     // Save the new stop and delete the old one transactionally
     TripStop savedStop = stopRepository.save(newStop);
     stopRepository.delete(oldStop);
+    
+    // Optional: If targetVisitOrder was provided, we may need to shift existing stops down.
+    // For now, since the AI handles ordering cleanly, we can just save it. 
+    // Wait, let's just do a simple shift if needed. 
+    if (request.getTargetVisitOrder() != null) {
+        List<TripStop> otherStops = stopRepository.findByItineraryDayIdOrderByVisitOrderAsc(targetDay.getId());
+        int currentOrder = 0;
+        for (TripStop other : otherStops) {
+            if (!other.getId().equals(savedStop.getId())) {
+                if (currentOrder == finalVisitOrder) currentOrder++;
+                other.setVisitOrder(currentOrder++);
+                stopRepository.save(other);
+            }
+        }
+    }
 
     Map<String, PlaceInfo> locationMap = savedStop.getGooglePlaceId() != null ? 
         locationGrpcClient.fetchPlaces(List.of(savedStop.getGooglePlaceId())) : Collections.emptyMap();

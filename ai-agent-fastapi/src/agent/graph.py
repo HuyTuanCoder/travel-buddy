@@ -184,7 +184,7 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
         return "early_exit"
         
     builder.add_conditional_edges("semantic_router", route_from_start)
-    builder.add_edge("early_exit", "memory_manager")
+    builder.add_edge("early_exit", END)
     
     # RAG -> Planner -> Executor
     builder.add_edge("rag_injector", "planner")

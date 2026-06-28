@@ -1,7 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import type { PanelImperativeHandle } from "react-resizable-panels"
-import { Users, Map as MapIcon, ChevronLeft, ChevronRight, PlusCircle, Calendar, MessageSquare, Save } from 'lucide-react'
+import { Users, Map as MapIcon, ChevronLeft, ChevronRight, Calendar, MessageSquare, Save } from 'lucide-react'
 import { APIProvider } from '@vis.gl/react-google-maps'
 import { DragDropContext } from '@hello-pangea/dnd'
 import type { DropResult } from '@hello-pangea/dnd'
@@ -16,7 +15,6 @@ import {
 } from '@/components/ui/resizable'
 import { useItineraryDetailLogic } from './hooks/useItineraryDetailLogic'
 import DayColumn from './components/DayColumn'
-import AddStopForm from './components/AddStopForm'
 import MemberPanel from './components/MemberPanel'
 import TripMapVisualizer from './components/TripMapVisualizer'
 import VerticalSidebar from './components/VerticalSidebar'
@@ -38,6 +36,8 @@ export default function ItineraryDetailPage() {
   const {
     itinerary,
     draftItinerary,
+    isDraftMode,
+    toggleDraftMode,
     modifiedStops,
     members,
     isLoading,
@@ -48,9 +48,6 @@ export default function ItineraryDetailPage() {
     handleRemoveDay,
     addStopDayId,
     setAddStopDayId,
-    handleAddStop,
-    handleUpdateStop,
-    handleRemoveStop,
     handleDraftReorderStops,
     handleDraftAddStop,
     handleDraftUpdateStop,
@@ -142,7 +139,7 @@ export default function ItineraryDetailPage() {
 
   return (
     <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
-      <main className="min-h-screen bg-slate-50 text-slate-900">
+      <main className={`min-h-screen text-slate-900 transition-all duration-300 ${isDraftMode ? 'bg-blue-50/30 ring-2 ring-blue-500 shadow-[inset_0_0_20px_rgba(59,130,246,0.1)]' : 'bg-slate-50'}`}>
         <div className="mx-auto max-w-[1400px] px-6 py-8">
         {/* --- Breadcrumb --- */}
         <Link
@@ -174,6 +171,15 @@ export default function ItineraryDetailPage() {
 
           {/* Trip actions */}
           <div className="flex items-center gap-2">
+            <Button
+              variant={isDraftMode ? "default" : "outline"}
+              className={isDraftMode ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-slate-300 text-slate-700 hover:bg-slate-100"}
+              size="sm"
+              onClick={() => toggleDraftMode()}
+            >
+              <div className={`w-2 h-2 rounded-full mr-2 ${isDraftMode ? 'bg-green-400' : 'bg-slate-400'}`}></div>
+              Draft Mode: {isDraftMode ? 'ON' : 'OFF'}
+            </Button>
             <Button
               variant="outline"
               size="sm"
@@ -212,7 +218,6 @@ export default function ItineraryDetailPage() {
           
           {/* GLOBAL LEFT NAV */}
           <VerticalSidebar
-            position="left"
             tabs={[
               {
                 id: 'members',
@@ -409,21 +414,58 @@ export default function ItineraryDetailPage() {
                   <AIChatPanel 
                     tripId={id!} 
                     workspaceDraft={displayItinerary}
+                    modifiedStops={modifiedStops}
+                    isDraftMode={isDraftMode}
                     onDraftReceived={(draftStops) => {
+                      // Handled array formatting in useAIChat.ts
                       draftStops.forEach(stop => {
-                        const targetDay = displayItinerary?.days.find(d => d.dayNumber === stop.day_number);
-                        if (targetDay) {
-                          const mappedStop = {
-                            locationName: stop.name || stop.place_name,
-                            address: stop.address || '',
-                            stopType: stop.stop_type || 'ATTRACTION',
-                            userNotes: stop.user_notes || stop.description || '',
-                            googlePlaceId: stop.google_place_id,
-                            estimatedCost: stop.estimated_cost ? parseFloat(stop.estimated_cost) : null,
-                            arrivalTime: stop.arrival_time || null,
-                            departureTime: stop.departure_time || null,
-                          };
-                          handleDraftAddStop(targetDay.id, mappedStop, 'AI');
+                        const targetDay = displayItinerary?.days.find(d => d.dayNumber === stop.day_number || d.dayNumber === stop.old_day_number);
+                        const existingStop = displayItinerary?.days.flatMap(d => d.stops).find(s => s.googlePlaceId === stop.google_place_id);
+
+                        switch(stop.action) {
+                          case 'add':
+                            if (targetDay) {
+                              const mappedStop = {
+                                locationName: stop.name || stop.place_name || '',
+                                address: stop.address || '',
+                                stopType: stop.stop_type || 'ATTRACTION',
+                                userNotes: stop.user_notes || stop.description || '',
+                                googlePlaceId: stop.google_place_id,
+                                estimatedCost: stop.estimated_cost ? parseFloat(stop.estimated_cost) : null,
+                                arrivalTime: stop.arrival_time || null,
+                                departureTime: stop.departure_time || null,
+                              };
+                              handleDraftAddStop(targetDay.id, mappedStop, 'AI');
+                            }
+                            break;
+                          case 'remove':
+                            if (existingStop) {
+                              handleDraftRemoveStop(existingStop.id);
+                            }
+                            break;
+                          case 'update':
+                            if (existingStop) {
+                                const updatePayload: any = {};
+                                if (stop.user_notes) updatePayload.userNotes = stop.user_notes;
+                                if (stop.arrival_time) updatePayload.arrivalTime = stop.arrival_time;
+                                if (stop.departure_time) updatePayload.departureTime = stop.departure_time;
+                                if (stop.estimated_cost) updatePayload.estimatedCost = parseFloat(stop.estimated_cost);
+                                handleDraftUpdateStop(existingStop.id, updatePayload, 'AI');
+                            }
+                            break;
+                          case 'move':
+                            if (existingStop && targetDay) {
+                                const newTargetDay = displayItinerary?.days.find(d => d.dayNumber === stop.new_day_number);
+                                if (newTargetDay) {
+                                    // Our current reorder expects sourceIndex/destIndex in the SAME day.
+                                    // Wait, handleDraftReorderStops doesn't support cross-day reordering yet! 
+                                    // "Moving stops between days is not yet supported." was in onDragEnd.
+                                    // For now, we simulate move by remove + add.
+                                    handleDraftRemoveStop(existingStop.id);
+                                    handleDraftAddStop(newTargetDay.id, existingStop, 'AI');
+                                }
+                            }
+                            break;
                         }
                       });
                     }}

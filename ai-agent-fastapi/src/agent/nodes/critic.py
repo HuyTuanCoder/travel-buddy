@@ -51,6 +51,8 @@ async def evaluate_itinerary(state: AgentState, config: RunnableConfig):
     
     import json
     draft_str = json.dumps(itinerary_draft, indent=2) if itinerary_draft else "{}"
+    user_modifications = state.get("user_modifications", {})
+    user_mod_context = json.dumps(user_modifications, indent=2) if user_modifications else "{}"
     
     rag_context = state.get("rag_context", "")
     rag_injection = f"\n{rag_context}\n" if rag_context else ""
@@ -59,10 +61,22 @@ async def evaluate_itinerary(state: AgentState, config: RunnableConfig):
     You are a ruthless, world-class Travel Critic.
     Review the Agent's proposed actions and the current ITINERARY DRAFT below.
     {rag_injection}
+    
+    USER MODIFICATIONS METADATA (Hierarchy of Truth - Level 2):
+    {user_mod_context}
+    
     Check for:
     1. Geographic impossibilities (e.g., driving from NY to London).
     2. Scheduling impossibilities (e.g., visiting a museum at 3:00 AM).
     3. SEMANTIC VIOLATIONS: Does the draft actually align with what the user requested in the conversation log? If they asked for cheap vegan food, and the draft contains an expensive steakhouse, REJECT IT.
+    
+    CRITICAL INSTRUCTIONS:
+    1. Hierarchy of Truth: 
+       - LEVEL 1 (Highest): The User's Latest Request.
+       - LEVEL 2: The USER MODIFICATIONS METADATA. If a stop has `isUserModified: true` in this JSON, the user explicitly dragged/edited it. DO NOT REJECT the draft based on a user-modified stop being "illogical" unless it directly violates the Level 1 latest request. The user is the ultimate authority.
+    2. PINPOINT FEEDBACK: When rejecting a draft, DO NOT give vague feedback like "the timing is bad". You MUST pinpoint the exact location of the error so the Planner can fix it efficiently without deleting the whole draft. (e.g. "On Day 3, Stop 5 (Beach), you scheduled it at 2 AM which is illogical. Please update the time for Stop 5.")
+    
+    SPECIAL RULE: IMMUTABLE TRIP METADATA. The Agent's tools can ONLY modify the actual stops/places. Top-level trip metadata (like 'trip name' and 'timezone') are enforced by the database when the user created the trip, and the Agent physically CANNOT change or remove them. If the user asks to change or ignore the timezone or trip name, DO NOT reject the draft just because that metadata is still present. The Agent only needs to acknowledge it in chat.
     
     Current Itinerary Draft:
     {draft_str}

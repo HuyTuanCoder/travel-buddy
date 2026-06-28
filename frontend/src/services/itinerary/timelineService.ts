@@ -95,3 +95,20 @@ export const reorderStops = async (
     throw error.response?.data ?? error
   }
 }
+
+// ==================== PUT /itineraries/stops/{stopId}/move ====================
+
+export const moveStop = async (
+  stopId: string,
+  payload: { targetDayId: string; targetVisitOrder?: number },
+): Promise<TripStopResponse> => {
+  try {
+    const response = await api.put(
+      `/itineraries/stops/${stopId}/move`,
+      payload,
+    )
+    return response.data as TripStopResponse
+  } catch (error: any) {
+    throw error.response?.data ?? error
+  }
+}

@@ -41,12 +41,25 @@ async def early_exit_node(state: AgentState, config: RunnableConfig):
             {"role": "user", "content": str(messages[-1].content) if messages else ""}
         ])
         
-        return {
-            "messages": [AIMessage(content=response.content)]
-            # We don't overwrite intent here, just return the message
-        }
+        malicious_msg_id = messages[-1].id if messages else None
+        refusal = AIMessage(content=response.content)
+        
+        return_payload = {"messages": [refusal]}
+        if malicious_msg_id:
+            from langchain_core.messages import RemoveMessage
+            return_payload["messages"].append(RemoveMessage(id=malicious_msg_id))
+            
+        return return_payload
+        
     except Exception as e:
         logger.error(f"Early exit response failed: {e}")
-        return {
-            "messages": [AIMessage(content="I'm sorry, I am a Travel Assistant and can only help you plan trips!")]
-        }
+        
+        malicious_msg_id = messages[-1].id if messages else None
+        refusal = AIMessage(content="I'm sorry, I am a Travel Assistant and can only help you plan trips!")
+        
+        return_payload = {"messages": [refusal]}
+        if malicious_msg_id:
+            from langchain_core.messages import RemoveMessage
+            return_payload["messages"].append(RemoveMessage(id=malicious_msg_id))
+            
+        return return_payload

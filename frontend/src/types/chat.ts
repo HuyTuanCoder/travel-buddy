@@ -6,7 +6,7 @@ export interface ChatMessage {
 }
 
 export interface StreamEvent {
-  type: 'thought' | 'token' | 'tool_call' | 'error' | 'draft_update' | 'done';
+  type: 'thought' | 'token' | 'tool_call' | 'error' | 'draft_update' | 'done' | 'new_run';
   content: string;
 }
 
