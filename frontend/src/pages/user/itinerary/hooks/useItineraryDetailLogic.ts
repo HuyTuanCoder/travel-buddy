@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { getItineraryDetail, updateItinerary, deleteItinerary, batchUpdateItinerary } from '@/services/itinerary/itineraryService'
 import { getMembers, inviteMember, removeMember, updateMemberRole, transferOwnership } from '@/services/itinerary/memberService'
 import { addDay, removeDay, addStop, updateStop, removeStop, reorderStops, moveStop, swapDays } from '@/services/itinerary/timelineService'
+import { applyDraftAction } from '../utils/draftReducer'
 import type {
   ItineraryDetailResponse,
   MemberListResponse,
@@ -340,103 +341,7 @@ export function useItineraryDetailLogic(itineraryId: string) {
       const newModifiedStops = { ...prev.modifiedStops };
 
       for (const action of actions) {
-        const type = action.action;
-        
-        if (type === 'add') {
-          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number);
-          if (targetDay) {
-            const tempId = action.id || `ai-temp-${crypto.randomUUID()}`;
-            targetDay.stops.push({
-              id: tempId,
-              googlePlaceId: action.google_place_id,
-              locationName: action.name || action.place_name || '',
-              stopType: action.stop_type || 'ATTRACTION',
-              userNotes: action.user_notes || '',
-              arrivalTime: action.arrival_time || null,
-              departureTime: action.departure_time || null,
-              estimatedCost: action.estimated_cost ? parseFloat(action.estimated_cost) : null,
-              isDraftDeleted: false
-            });
-            if (!newModifiedStops[tempId]) newModifiedStops[tempId] = {};
-            newModifiedStops[tempId].isAiModified = true;
-          }
-        }
-        else if (type === 'remove') {
-          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number);
-          if (targetDay) {
-            const targetStop = targetDay.stops.find((s: any) => s.googlePlaceId === action.google_place_id || s.id === action.id);
-            if (targetStop) {
-              targetStop.isDraftDeleted = true; // Tombstone!
-              if (!newModifiedStops[targetStop.id]) newModifiedStops[targetStop.id] = {};
-              newModifiedStops[targetStop.id].isAiModified = true;
-            }
-          }
-        }
-        else if (type === 'update') {
-          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number);
-          if (targetDay) {
-            const targetStop = targetDay.stops.find((s: any) => s.googlePlaceId === action.google_place_id || s.id === action.id);
-            if (targetStop) {
-              if (action.user_notes !== undefined) targetStop.userNotes = action.user_notes;
-              if (action.arrival_time !== undefined) targetStop.arrivalTime = action.arrival_time;
-              if (action.departure_time !== undefined) targetStop.departureTime = action.departure_time;
-              if (!newModifiedStops[targetStop.id]) newModifiedStops[targetStop.id] = {};
-              newModifiedStops[targetStop.id].isAiModified = true;
-            }
-          }
-        }
-        else if (type === 'move') {
-          const oldDay = newDraft.days.find((d: any) => d.dayNumber === action.old_day_number);
-          const newDay = newDraft.days.find((d: any) => d.dayNumber === action.new_day_number);
-          if (oldDay && newDay) {
-            const targetIndex = oldDay.stops.findIndex((s: any) => s.googlePlaceId === action.google_place_id || s.id === action.id);
-            if (targetIndex !== -1) {
-              const [movedStop] = oldDay.stops.splice(targetIndex, 1);
-              if (action.new_visit_order !== undefined && action.new_visit_order !== null) {
-                newDay.stops.splice(action.new_visit_order, 0, movedStop);
-              } else {
-                newDay.stops.push(movedStop); // Append sequentially!
-              }
-              if (!newModifiedStops[movedStop.id]) newModifiedStops[movedStop.id] = {};
-              newModifiedStops[movedStop.id].isAiModified = true;
-            }
-          }
-        }
-        else if (type === 'add_day') {
-           const nextDay = newDraft.days.length + 1;
-           newDraft.days.push({
-             id: `ai-temp-day-${crypto.randomUUID()}`,
-             itineraryId,
-             dayNumber: nextDay,
-             scheduledDate: action.scheduled_date || null,
-             stops: [],
-             isDraftDeleted: false
-           });
-        }
-        else if (type === 'remove_day') {
-          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number || d.id === action.id);
-          if (targetDay) targetDay.isDraftDeleted = true; // Tombstone
-        }
-        else if (type === 'restore_day') {
-          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number || d.id === action.id);
-          if (targetDay) targetDay.isDraftDeleted = false; // Restore
-        }
-        else if (type === 'restore_stop') {
-          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number || d.id === action.day_id);
-          if (targetDay) {
-            const targetStop = targetDay.stops.find((s: any) => s.googlePlaceId === action.google_place_id || s.id === action.id);
-            if (targetStop) targetStop.isDraftDeleted = false; // Restore
-          }
-        }
-        else if (type === 'swap_days') {
-          const dayAIndex = newDraft.days.findIndex((d: any) => d.dayNumber === action.day_a);
-          const dayBIndex = newDraft.days.findIndex((d: any) => d.dayNumber === action.day_b);
-          if (dayAIndex !== -1 && dayBIndex !== -1) {
-            const temp = newDraft.days[dayAIndex].dayNumber;
-            newDraft.days[dayAIndex].dayNumber = newDraft.days[dayBIndex].dayNumber;
-            newDraft.days[dayBIndex].dayNumber = temp;
-          }
-        }
+        applyDraftAction(newDraft, action, newModifiedStops, itineraryId);
       }
 
       // Sort days by dayNumber so UI reflects swaps properly

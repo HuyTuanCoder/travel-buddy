@@ -385,6 +385,7 @@ export default function ItineraryDetailPage() {
                                       isDraftMode={isDraftMode}
                                       onRestoreDay={(dayId) => dispatchDraftActions([{ action: 'restore_day', id: dayId, day_number: day.dayNumber }])}
                                       onRestoreStop={(stopId) => dispatchDraftActions([{ action: 'restore_stop', id: stopId, day_number: day.dayNumber }])}
+                                      onHardRemoveStop={(stopId) => dispatchDraftActions([{ action: 'hard_remove', id: stopId, day_number: day.dayNumber }])}
                                       isAddStopOpen={addStopDayId === day.id}
                                       onToggleAddStop={() =>
                                         setAddStopDayId(addStopDayId === day.id ? null : day.id)

@@ -20,6 +20,7 @@ class DraftRemoveStopArgs(BaseModel):
     day_number: int = Field(description="The day number the stop is currently on.")
 
 class DraftAddDayArgs(BaseModel):
+    day_number: int = Field(description="The 1-indexed day number to add (e.g. 1 for Day 1). Must be provided explicitly.")
     scheduled_date: str = Field(default="", description="Optional date for the new day in YYYY-MM-DD format.")
 
 class DraftRemoveDayArgs(BaseModel):
@@ -126,13 +127,14 @@ def draft_move_stop(google_place_id: str, old_day_number: int, new_day_number: i
 
 @tool("draft_add_day", args_schema=DraftAddDayArgs)
 @tool_error_boundary
-def draft_add_day(scheduled_date: str = "") -> str:
+def draft_add_day(day_number: int, scheduled_date: str = "") -> str:
     """
-    Call this tool to append a new day to the itinerary DRAFT.
+    Call this tool to explicitly add a new day to the itinerary DRAFT.
     """
     return json.dumps({
         "action": "add_day",
         "is_draft": True,
+        "day_number": day_number,
         "scheduled_date": scheduled_date
     })
 

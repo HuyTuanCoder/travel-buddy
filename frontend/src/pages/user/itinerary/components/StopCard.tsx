@@ -15,6 +15,7 @@ interface StopCardProps {
   onUpdate: (id: string, payload: UpdateStopRequest) => void
   onRemove: (id: string) => void
   onRestore?: (id: string) => void
+  onHardRemove?: (id: string) => void
   isDraft?: boolean
   isDraftMode?: boolean
   isAiModified?: boolean
@@ -31,7 +32,7 @@ const stopTypeStyles: Record<string, string> = {
 
 // ==================== Component ====================
 
-export default function StopCard({ stop, index, onUpdate, onRemove, onRestore, isDraft, isDraftMode, isAiModified }: StopCardProps) {
+export default function StopCard({ stop, index, onUpdate, onRemove, onRestore, onHardRemove, isDraft, isDraftMode, isAiModified }: StopCardProps) {
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   // Format time for display (HH:mm → "10:30 AM")
@@ -61,17 +62,30 @@ export default function StopCard({ stop, index, onUpdate, onRemove, onRestore, i
             } ${provided.draggableProps.style?.isDragging ? 'bg-blue-100/80 shadow-md' : ''}`}
           >
             {/* If deleted, we allow pointer events ONLY on the restore button overlay */}
-            {stop.isDraftDeleted && onRestore && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-auto">
-                <Button 
-                  variant="default" 
-                  size="sm" 
-                  className="bg-emerald-600 hover:bg-emerald-700 shadow-md"
-                  onClick={() => onRestore(stop.id)}
-                >
-                  <RefreshCcw size={14} className="mr-2" />
-                  Restore
-                </Button>
+            {stop.isDraftDeleted && (onRestore || onHardRemove) && (
+              <div className="absolute inset-0 z-10 flex items-center justify-center pointer-events-auto gap-2 bg-slate-50/80 rounded-xl">
+                {onRestore && (
+                  <Button 
+                    variant="default" 
+                    size="sm" 
+                    className="bg-emerald-600 hover:bg-emerald-700 shadow-md"
+                    onClick={() => onRestore(stop.id)}
+                  >
+                    <RefreshCcw size={14} className="mr-2" />
+                    Restore
+                  </Button>
+                )}
+                {onHardRemove && (
+                  <Button 
+                    variant="destructive" 
+                    size="sm" 
+                    className="shadow-md"
+                    onClick={() => onHardRemove(stop.id)}
+                  >
+                    <Trash2 size={14} className="mr-2" />
+                    Delete
+                  </Button>
+                )}
               </div>
             )}
 

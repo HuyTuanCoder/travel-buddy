@@ -83,12 +83,13 @@ async def plan_itinerary(state: AgentState, config: RunnableConfig):
 
        - PHASE 2: Collaborative Gathering Loop (The "Where" & "When")
          Condition: Basic constraints are known, but you do NOT yet have a comprehensive list of CONFIRMED points of interest (POIs), timing preferences, and pacing details for the entire trip.
-         Action: Output a plan to use `search_web` (encourage using it IN PARALLEL for different categories like restaurants vs activities if applicable) to find POIs that match the vibe, present curated options (Option A vs Option B), and actively ask logistical questions (e.g., "Would you prefer this in the morning?", "What time do you usually start your day?", "Do you want a packed schedule?").
-         Rule: You MUST stay in this phase across multiple turns to build a massive repository of confirmed preferences in the chat history. YOU ARE BANNED FROM DRAFTING. Only when you have gathered enough details to confidently fill a substantial portion of the trip, you may end your plan by instructing the agent to ask: "Are you ready for me to draft this into a schedule?"
+         Action: Output a plan to use `search_web` (encourage using it IN PARALLEL for different categories like restaurants vs activities if applicable) to find POIs that match the vibe, present curated options, and actively ask logistical questions.
+         Rule: You MUST stay in this phase across multiple turns to build a massive repository of confirmed preferences in the chat history.
+         CRITICAL UX RULE: When instructing the agent to present multiple options, you MUST explicitly command it to be CONCISE (e.g. "Present 3 options concisely using bullet points and 1-sentence highlights"). Do NOT instruct it to write massive paragraphs. YOU ARE BANNED FROM DRAFTING. For long trips (4+ days), you do NOT need to gather context for the entire trip before drafting. Once you have a few solid ideas, you may end your plan by instructing the agent to ask: "Are you ready for me to put these ideas onto the board for the first couple of days so we can visualize it?"
 
        - PHASE 3: Itinerary Design (The Draft)
          Condition: The user has explicitly consented to drafting (e.g., "Yes, make the draft now") AFTER the Phase 2 gathering loop is complete.
-         Action: Output a plan to officially lock in the confirmed POIs using `find_and_register_place` (encourage IN PARALLEL if multiple places), create the skeleton using `draft_add_day`, and schedule everything using `draft_add_stop` (encourage IN PARALLEL if scheduling multiple stops) according to their preferred pacing and timing.
+         Action: Output a plan to officially lock in the confirmed POIs using `find_and_register_place` (encourage IN PARALLEL if multiple places), create the skeleton using `draft_add_day`, and schedule everything using `draft_add_stop` (encourage IN PARALLEL if scheduling multiple stops) according to their preferred pacing and timing. It is perfectly fine if the initial draft is incomplete or only covers the first few days (especially for long trips). The goal is to quickly get a visual skeleton on the board so the user can use the UI tools (add, move, swap) to fill in the blanks interactively.
 
        - PHASE 4: Refinement (Post-Draft)
          Condition: A draft exists, and the user is asking for tweaks.
@@ -98,9 +99,9 @@ async def plan_itinerary(state: AgentState, config: RunnableConfig):
     
     4. LONG-TERM MEMORY (AGENTIC RAG): If the user refers to past conversations, past preferences, or says things like 'remember what I told you', you MUST instruct the agent to use the `search_past_conversations` tool.
     
-    5. PARALLEL TOOL EXECUTION: Actively encourage the Agent to execute tools in parallel whenever possible to reduce latency. If you are registering multiple distinct places, explicitly instruct the Agent to call `find_and_register_place` IN PARALLEL. If you are scheduling multiple stops for a day, tell it to call `draft_add_stop` IN PARALLEL.
+    5. PARALLEL TOOL EXECUTION & RECURSION LIMITS (CRITICAL): The execution graph has a strict recursion limit of 25 loops. If you output 20 separate checklist items, the system will crash before it finishes. You MUST group parallel actions into a SINGLE checklist item. NEVER output more than 4-5 steps total in your array. If you are registering 9 places, combine them into ONE step: "Register Alum Cave, Newfound Gap, and 7 other places IN PARALLEL using `find_and_register_place`". If you are adding 5 stops to a day, combine them into ONE step: "Add the 5 stops to Day 1 IN PARALLEL using `draft_add_stop`".
     
-    Do NOT execute the actions. Just write the checklist.
+    Do NOT execute the actions. Just write the checklist. Your array MUST NOT exceed 5 items.
     Example Phase 1: ["Push back and ask user for trip duration, budget, and the vibe they are looking for"]
     Example Phase 2: ["Search web for trendy Sushi restaurants", "Present top 2 sushi options to the user and ask if they prefer an early or late dinner reservation"]
     Example Phase 3: ["Register the 3 confirmed POIs (The Louvre, Eiffel Tower, and the sushi restaurant) IN PARALLEL with find_and_register_place", "Append them to Day 1 IN PARALLEL using draft_add_stop ensuring chronological order (Morning -> Afternoon -> Evening)"]

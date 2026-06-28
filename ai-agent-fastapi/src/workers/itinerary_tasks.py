@@ -57,6 +57,25 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
         from src.core.langfuse_compat import CallbackHandler
         langfuse_handler = CallbackHandler()
         config["callbacks"] = [langfuse_handler]
+        
+        # --- Time Travel Rollback for Crash Recovery ---
+        import uuid
+        current_state = await app_graph.aget_state(config)
+        if current_state.next:
+            log.warning(f"Thread {trip_id} is in a poisoned state (crashed at {current_state.next}). Initiating Time Travel Rollback.")
+            healthy_config = None
+            async for past_state in app_graph.aget_state_history(config):
+                if not past_state.next:
+                    healthy_config = past_state.config
+                    break
+            
+            if healthy_config:
+                config = healthy_config
+                log.info(f"Successfully rolled back thread {trip_id} to last healthy checkpoint.")
+            else:
+                log.error("No healthy checkpoint found. Thread is unrecoverable. Resetting thread.")
+                config["configurable"]["thread_id"] = f"{trip_id}-reset-{uuid.uuid4().hex[:8]}"
+        # -----------------------------------------------
 
         log.info("Invoking LangGraph with streaming")
         text_buffer = ""
@@ -68,7 +87,7 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
             if kind == "on_chat_model_stream":
                 content = event["data"]["chunk"].content
                 if content and isinstance(content, str):
-                    if node_name == "speaker":
+                    if node_name in ["speaker", "early_exit"]:
                         await streamer.stream_token(content)
                     elif node_name == "executor":
                         text_buffer += content
@@ -88,8 +107,12 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                     
                     if status == "SUCCESS" and event["name"].startswith("draft_"):
                         import json
-                        action_json = json.loads(content)
-                        await streamer.stream_draft_update(action_json)
+                        try:
+                            action_json = json.loads(content)
+                            print(f"DRAFT UPDATE SENT: {action_json}")
+                            await streamer.stream_draft_update(action_json)
+                        except Exception as e:
+                            print(f"JSON ERROR: {e}, content: {content}")
 
                     await streamer.stream_tool_result(event['name'], content, status)
 

@@ -20,3 +20,6 @@ class ExtractedFact(BaseModel):
     permanence: PermanenceLevel = Field(description="Whether this is a permanent constraint or a temporary preference.")
     timestamp: float = Field(default_factory=lambda: __import__('time').time(), description="UTC timestamp of when this memory was extracted/updated.")
     raw_quote: str = Field(description="The exact words the user used.")
+
+class ExtractedFacts(BaseModel):
+    facts: list[ExtractedFact] = Field(description="A list of extracted facts", default_factory=list)

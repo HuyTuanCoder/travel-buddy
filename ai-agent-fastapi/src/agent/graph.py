@@ -17,6 +17,7 @@ from src.agent.nodes.router import semantic_router
 from src.agent.nodes.early_exit import early_exit_node
 
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
+from src.agent.tools.memory import search_past_conversations
 from src.agent.tools.draft import (
     draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, 
     draft_add_day, draft_remove_day, draft_restore_day, draft_restore_stop, draft_swap_days
@@ -165,7 +166,7 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     builder.add_node("executor", call_executor)
     builder.add_node("speaker", call_speaker)
     builder.add_node("auto_tools", ToolNode([
-        search_web, read_webpage, find_and_register_place,
+        search_web, read_webpage, find_and_register_place, search_past_conversations,
         draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, 
         draft_add_day, draft_remove_day, draft_restore_day, draft_restore_stop, draft_swap_days
     ]))

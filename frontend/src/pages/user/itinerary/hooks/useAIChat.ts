@@ -90,7 +90,11 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
             try {
               let draftData = JSON.parse(data.content);
               if (options?.onDraftReceived) {
-                draftQueue.current.push(draftData);
+                if (Array.isArray(draftData)) {
+                  draftQueue.current.push(...draftData);
+                } else {
+                  draftQueue.current.push(draftData);
+                }
                 if (!draftFrameRef.current) {
                   draftFrameRef.current = requestAnimationFrame(() => {
                     // Flush the entire queue to the unified reducer at once
@@ -102,8 +106,8 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
                   });
                 }
               }
-            } catch (e) {
-              console.error("Failed to parse draft_update", e);
+            } catch (err) {
+              console.error("[SSE] Failed to parse draft_update", err);
             }
             break;
 

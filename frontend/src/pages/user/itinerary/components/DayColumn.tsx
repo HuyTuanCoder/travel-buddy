@@ -27,6 +27,7 @@ interface DayColumnProps {
   isDraftMode?: boolean
   onRestoreDay?: (dayId: string) => void
   onRestoreStop?: (stopId: string) => void
+  onHardRemoveStop?: (stopId: string) => void
   dragHandleProps?: any
 }
 
@@ -44,6 +45,7 @@ export default function DayColumn({
   isDraftMode,
   onRestoreDay,
   onRestoreStop,
+  onHardRemoveStop,
   dragHandleProps,
 }: DayColumnProps) {
   const [isRemoveDayModalOpen, setIsRemoveDayModalOpen] = useState(false)
@@ -135,6 +137,7 @@ export default function DayColumn({
                     onUpdate={onUpdateStop}
                     onRemove={onRemoveStop}
                     onRestore={onRestoreStop}
+                    onHardRemove={onHardRemoveStop}
                     isDraft={!!modifiedStops[stop.id]}
                     isDraftMode={isDraftMode}
                     isAiModified={modifiedStops[stop.id]?.isAiModified}

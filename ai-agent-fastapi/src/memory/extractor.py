@@ -1,5 +1,5 @@
 import logging
-from src.schemas.memory import ExtractedFact
+from src.schemas.memory import ExtractedFact, ExtractedFacts
 import json
 
 from src.core.config import get_llm
@@ -25,8 +25,8 @@ def _llm_extraction(new_messages: list[str], current_facts: list[dict] = None) -
     # Use default model (e.g. vertex-ai gemini or google ai studio), fallback is handled in get_llm
     llm = get_llm(model_name="gemini-1.5-flash", temperature=0)
     
-    # Force the LLM to output a list of ExtractedFact JSONs
-    structured_llm = llm.with_structured_output(list[ExtractedFact])
+    # Force the LLM to output a list of ExtractedFact JSONs wrapped in ExtractedFacts
+    structured_llm = llm.with_structured_output(ExtractedFacts)
     
     combined_new_messages = " ".join(new_messages)
     facts_context = json.dumps(current_facts) if current_facts else "No existing facts."
@@ -50,6 +50,6 @@ def _llm_extraction(new_messages: list[str], current_facts: list[dict] = None) -
     """
     
     logger.info(f"Extracting memory from {len(new_messages)} new messages using pure LLM...")
-    facts = structured_llm.invoke(prompt)
+    result = structured_llm.invoke(prompt)
     # Ensure it's a list even if LLM returns None
-    return facts if facts else []
+    return result.facts if result and result.facts else []

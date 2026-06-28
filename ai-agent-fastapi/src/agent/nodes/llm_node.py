@@ -63,8 +63,17 @@ async def call_executor(state: AgentState, config: RunnableConfig):
             action = action_data.get("action")
             
             if action == "add_day":
-                next_day = len(itinerary_draft["days"]) + 1
-                itinerary_draft["days"].append({"dayNumber": next_day, "stops": []})
+                day_num = action_data.get("day_number")
+                day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == day_num), None)
+                
+                if day is None:
+                    current_max = max((d.get("dayNumber", 0) for d in itinerary_draft["days"]), default=0)
+                    for missing_day_num in range(current_max + 1, day_num + 1):
+                        itinerary_draft["days"].append({"dayNumber": missing_day_num, "stops": []})
+                    day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == day_num), None)
+                    
+                if action_data.get("scheduled_date"):
+                    day["scheduledDate"] = action_data.get("scheduled_date")
             
             elif action == "remove_day":
                 itinerary_draft["days"] = [d for d in itinerary_draft["days"] if d.get("dayNumber") != action_data.get("day_number")]
@@ -72,8 +81,14 @@ async def call_executor(state: AgentState, config: RunnableConfig):
             elif action == "add":
                 day_num = action_data.get("day_number")
                 day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == day_num), None)
-                if day is not None:
-                    day.setdefault("stops", []).append({
+                
+                if day is None:
+                    current_max = max((d.get("dayNumber", 0) for d in itinerary_draft["days"]), default=0)
+                    for missing_day_num in range(current_max + 1, day_num + 1):
+                        itinerary_draft["days"].append({"dayNumber": missing_day_num, "stops": []})
+                    day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == day_num), None)
+                    
+                day.setdefault("stops", []).append({
                         "googlePlaceId": action_data.get("google_place_id"),
                         "locationName": action_data.get("name"),
                         "category": action_data.get("stop_type"),
@@ -109,6 +124,12 @@ async def call_executor(state: AgentState, config: RunnableConfig):
                 old_day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == old_day_num), None)
                 new_day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == new_day_num), None)
                 
+                if new_day is None:
+                    current_max = max((d.get("dayNumber", 0) for d in itinerary_draft["days"]), default=0)
+                    for missing_day_num in range(current_max + 1, new_day_num + 1):
+                        itinerary_draft["days"].append({"dayNumber": missing_day_num, "stops": []})
+                    new_day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == new_day_num), None)
+                
                 if old_day and new_day and "stops" in old_day:
                     target_stop = next((s for s in old_day["stops"] if s.get("googlePlaceId") == place_id), None)
                     if target_stop:
@@ -121,9 +142,10 @@ async def call_executor(state: AgentState, config: RunnableConfig):
     # Construct a static System Prompt for identity
     sys_msg = SystemMessage(content="""You are an AI Travel Agent Executor.
     
-    IMPORTANT MANDATE:
-    If the user's request is ambiguous (e.g., 'move it to the start' but you don't know which exact order, or 'swap that day' but you don't know which two days), DO NOT GUESS and DO NOT CALL TOOLS. 
-    Instead, output a natural language question asking the user to clarify exactly where they want it.""")
+    IMPORTANT MANDATES:
+    1. GENERATIVE UI PRINCIPLE (NO MARKDOWN ITINERARIES): You have access to a rich UI (the Kanban board). When you draft or modify an itinerary, you MUST use your tools (`draft_add_day`, `draft_add_stop`, etc.) to build it on the UI. YOU ARE STRICTLY BANNED from writing out the entire itinerary day-by-day in your text response. Instead, rely on the UI to show the schedule. In your text response, briefly summarize what you drafted (e.g., "I've sketched out the first two days on the board for us to visualize") and ask the user for their thoughts or next steps.
+    2. CONCISENESS & COGNITIVE LOAD: When presenting options to a user (e.g., trails, hotels, restaurants), DO NOT output massive walls of text. Provide short bullet points with 1-2 sentence highlights. Avoid overwhelming the user with paragraphs of details unless explicitly requested. Ask ONE clear question at the end to guide them to the next step.
+    3. AMBIGUITY: If the user's request is ambiguous (e.g., 'move it to the start' but you don't know which exact order, or 'swap that day' but you don't know which two days), DO NOT GUESS and DO NOT CALL TOOLS. Instead, output a natural language question asking the user to clarify exactly where they want it.""")
     # Construct an ephemeral context injection for the BOTTOM of the prompt
     ephemeral_context = "\n--- SYSTEM EXECUTION CONTEXT ---\n"
     
