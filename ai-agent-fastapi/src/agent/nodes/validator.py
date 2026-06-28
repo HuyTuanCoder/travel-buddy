@@ -1,6 +1,7 @@
 from pydantic import ValidationError
 from langchain_core.messages import ToolMessage
 from src.schemas.agent import AgentState
+from src.core.error_handlers import node_error_boundary
 import json
 
 def _check_time_overlap(itinerary_draft: dict, day_number: int, arrival_time: str, departure_time: str) -> str:
@@ -27,11 +28,10 @@ def _check_time_overlap(itinerary_draft: dict, day_number: int, arrival_time: st
             
     return ""
 
+@node_error_boundary
 def validate_tool_call(state: AgentState):
     """
     Intercepts Gemini's tool calls BEFORE they execute.
-    Supports Partial Validation: only returns ToolMessages for INVALID tools, 
-    letting LangGraph's auto_tools safely execute the valid ones.
     """
     last_message = state["messages"][-1]
     
@@ -42,7 +42,7 @@ def validate_tool_call(state: AgentState):
     has_error = False
     
     # Import schemas locally to avoid circular imports if any
-    from src.agent.tools.draft import DraftAddStopArgs, DraftUpdateStopArgs, DraftMoveStopArgs, DraftAddDayArgs, DraftRemoveDayArgs, DraftBatchAddDaysArgs, DraftRemoveStopArgs
+    from src.agent.tools.draft import DraftAddStopArgs, DraftUpdateStopArgs, DraftMoveStopArgs, DraftAddDayArgs, DraftRemoveDayArgs, DraftRemoveStopArgs
     
     schema_map = {
         "draft_add_stop": DraftAddStopArgs,
@@ -50,7 +50,6 @@ def validate_tool_call(state: AgentState):
         "draft_move_stop": DraftMoveStopArgs,
         "draft_add_day": DraftAddDayArgs,
         "draft_remove_day": DraftRemoveDayArgs,
-        "draft_batch_add_days": DraftBatchAddDaysArgs,
         "draft_remove_stop": DraftRemoveStopArgs
     }
     

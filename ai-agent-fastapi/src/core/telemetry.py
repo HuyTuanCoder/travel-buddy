@@ -20,32 +20,30 @@ async def _get_redis() -> aioredis.Redis:
         _redis_client = aioredis.from_url(settings.REDIS_URL)
     return _redis_client
 
+async def close_telemetry_redis() -> None:
+    """Explicitly close the global Redis connection pool to prevent socket leaks."""
+    global _redis_client
+    if _redis_client is not None:
+        await _redis_client.aclose() if hasattr(_redis_client, "aclose") else await _redis_client.close()
+        _redis_client = None
+
 
 async def publish_thought(channel: str, content: str) -> None:
     """Stream a blockquote '> thought' bubble to the frontend."""
-    try:
-        r = await _get_redis()
-        await r.publish(channel, json.dumps({"type": "thought", "content": content}))
-    except Exception as e:
-        logger.error("publish_thought failed", channel=channel, error=str(e))
+    r = await _get_redis()
+    await r.publish(channel, json.dumps({"type": "thought", "content": content}))
 
 
 async def publish_token(channel: str, content: str) -> None:
     """Stream a raw LLM token to the frontend."""
-    try:
-        r = await _get_redis()
-        await r.publish(channel, json.dumps({"type": "token", "content": content}))
-    except Exception as e:
-        logger.error("publish_token failed", channel=channel, error=str(e))
+    r = await _get_redis()
+    await r.publish(channel, json.dumps({"type": "token", "content": content}))
 
 
 async def publish_event(channel: str, event_type: str, content: str) -> None:
     """Stream any arbitrary event type (done, error, draft_update, tool_call)."""
-    try:
-        r = await _get_redis()
-        await r.publish(channel, json.dumps({"type": event_type, "content": content}))
-    except Exception as e:
-        logger.error("publish_event failed", channel=channel, error=str(e))
+    r = await _get_redis()
+    await r.publish(channel, json.dumps({"type": event_type, "content": content}))
 
 
 # ---------------------------------------------------------------------------

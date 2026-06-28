@@ -28,6 +28,10 @@ COPY shared-proto/ /shared-proto/
 # Generate gRPC Stubs dynamically during build
 RUN ./scripts/generate_protos.sh
 
+# Run strict enterprise static analysis (Linter & Import Checker)
+# We ignore F401 (unused imports) so it only blocks on fatal logic/import errors like F821 (undefined names)
+RUN pip install --default-timeout=100 ruff && ruff check src/ --exclude src/generated/ --ignore F401
+
 # Expose port (will be overridden by docker-compose)
 EXPOSE 8007
 

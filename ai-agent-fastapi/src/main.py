@@ -1,12 +1,13 @@
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
+import structlog
 from langgraph.checkpoint.postgres.aio import AsyncPostgresSaver
 from src.core.telemetry import setup_telemetry
-
-setup_telemetry()
-
 from src.api.chat_routes import router as chat_router
 from src.core.database import DATABASE_URL
+
+setup_telemetry()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -36,6 +37,20 @@ app.include_router(chat_router, prefix="/ai")
 @app.get("/")
 def health_check():
     return {"status": "AI is alive and breathing."}
+
+logger = structlog.get_logger(__name__)
+
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    """
+    Catch-all exception handler to ensure all unhandled errors are logged via structlog
+    and returned as a strict HTTP 500 JSON response, enforcing API discipline.
+    """
+    logger.error("Unhandled REST API Error", path=request.url.path, error=str(exc), exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={"detail": "An internal system error occurred. It has been logged for investigation."}
+    )
 
 @app.post("/ai/test-echo")
 async def test_echo(request: Request):

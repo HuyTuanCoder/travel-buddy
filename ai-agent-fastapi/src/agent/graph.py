@@ -8,6 +8,7 @@ from src.schemas.agent import AgentState
 from src.agent.nodes.llm_node import call_executor
 from src.agent.nodes.speaker import call_speaker
 from src.agent.nodes.validator import validate_tool_call
+from src.core.error_handlers import node_error_boundary
 from src.agent.nodes.rag_injector import inject_memories
 from src.agent.nodes.planner import plan_itinerary
 from src.agent.nodes.critic import evaluate_itinerary
@@ -16,7 +17,7 @@ from src.agent.nodes.router import semantic_router
 from src.agent.nodes.early_exit import early_exit_node
 
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
-from src.agent.tools.draft import draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop_between_days
+from src.agent.tools.draft import draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, draft_add_day, draft_remove_day
 from src.workers.memory_tasks import process_evicted_memory
 from src.core.telemetry import publish_thought
 from langchain_core.runnables import RunnableConfig
@@ -32,11 +33,10 @@ def route_from_executor(state: AgentState):
 
 # custom router to check if Pydantic reject the json
 def router_from_validator(state: AgentState):
-    if state.get("validation_error"):
-        return "executor" # bounce back to llm
-        
     last_message = state["messages"][-1]
     if hasattr(last_message, "tool_calls") and last_message.tool_calls:
+        # We always route to auto_tools, even if there are validation errors,
+        # so that the valid tool calls (which don't have ToolMessages yet) can be executed.
         return "auto_tools"
     return "executor"
 
@@ -62,6 +62,7 @@ def route_after_auto_tools(state: AgentState):
             
     return "executor"
 
+@node_error_boundary
 async def memory_manager(state: AgentState, config: RunnableConfig):
     """
     Tier 1 Context Window Manager.
@@ -132,11 +133,7 @@ Output: The user is planning a trip to Tokyo and wants to visit a museum. The ag
 
 Return ONLY the updated paragraph.
 """
-        try:
-            new_summary = llm.invoke(prompt).content
-        except Exception as e:
-            logger.error(f"Failed to generate running summary: {e}")
-            new_summary = existing_summary
+        new_summary = llm.invoke(prompt).content
             
     # Send texts to Celery for Tier 2 Delta Extraction
     texts_to_extract = [msg.content for msg in messages_to_drop if isinstance(msg.content, str)]
@@ -166,7 +163,7 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     builder.add_node("speaker", call_speaker)
     builder.add_node("auto_tools", ToolNode([
         search_web, read_webpage, find_and_register_place,
-        draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop_between_days
+        draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, draft_add_day, draft_remove_day
     ]))
     builder.add_node("validator", validate_tool_call)
     builder.add_node("critic", evaluate_itinerary)

@@ -8,6 +8,7 @@ from src.schemas.agent import AgentState
 from src.core.config import get_llm
 from src.core.telemetry import publish_thought
 from langchain_core.runnables import RunnableConfig
+from src.core.error_handlers import node_error_boundary
 
 logger = structlog.get_logger(__name__)
 
@@ -19,6 +20,7 @@ class CriticEvaluation(BaseModel):
         description="If invalid, provide strict, scathing feedback on exactly what went wrong and how to fix it. If valid, leave empty."
     )
 
+@node_error_boundary
 async def evaluate_itinerary(state: AgentState, config: RunnableConfig):
     """
     Gate 3: The Critic Node (Reflexion).
@@ -76,7 +78,9 @@ async def evaluate_itinerary(state: AgentState, config: RunnableConfig):
        - LEVEL 2: The USER MODIFICATIONS METADATA. If a stop has `isUserModified: true` in this JSON, the user explicitly dragged/edited it. DO NOT REJECT the draft based on a user-modified stop being "illogical" unless it directly violates the Level 1 latest request. The user is the ultimate authority.
     2. PINPOINT FEEDBACK: When rejecting a draft, DO NOT give vague feedback like "the timing is bad". You MUST pinpoint the exact location of the error so the Planner can fix it efficiently without deleting the whole draft. (e.g. "On Day 3, Stop 5 (Beach), you scheduled it at 2 AM which is illogical. Please update the time for Stop 5.")
     
-    SPECIAL RULE: IMMUTABLE TRIP METADATA. The Agent's tools can ONLY modify the actual stops/places. Top-level trip metadata (like 'trip name' and 'timezone') are enforced by the database when the user created the trip, and the Agent physically CANNOT change or remove them. If the user asks to change or ignore the timezone or trip name, DO NOT reject the draft just because that metadata is still present. The Agent only needs to acknowledge it in chat.
+    SPECIAL RULE 1: IMMUTABLE TRIP METADATA. The Agent's tools can ONLY modify the actual stops/places. Top-level trip metadata (like 'trip name' and 'timezone') are enforced by the database when the user created the trip, and the Agent physically CANNOT change or remove them. If the user asks to change or ignore the timezone or trip name, DO NOT reject the draft just because that metadata is still present. The Agent only needs to acknowledge it in chat.
+    
+    SPECIAL RULE 2: THE CONSULTATION PHASES (DO NOT PENALIZE CHATTING). The Agent operates in 4 strict phases: Discovery, Gathering, Drafting, and Refinement. If the Agent is actively asking the user questions, gathering timing preferences, or presenting options (Phase 1 or 2), you MUST APPROVE (is_valid: true). Do NOT reject a response for lacking draft updates unless the user EXPLICITLY ordered the AI to draft the schedule right now, and the AI completely failed to do so. The Agent is BANNED from drafting during the gathering phases, so you must not penalize it for obeying this rule!
     
     Current Itinerary Draft:
     {draft_str}
@@ -97,42 +101,36 @@ async def evaluate_itinerary(state: AgentState, config: RunnableConfig):
     }}
     """
     
-    try:
-        logger.info(f"Critic Node: Evaluating draft (Retry {retry_count}/3)...")
-        evaluation = structured_llm.invoke(system_prompt)
-        
-        # Fallback for Gemini returning a raw dict instead of Pydantic model
-        if isinstance(evaluation, dict):
-            is_valid = evaluation.get("is_valid", True)
-            feedback = evaluation.get("feedback", "")
-        else:
-            is_valid = getattr(evaluation, "is_valid", True)
-            feedback = getattr(evaluation, "feedback", "")
-        
-        if is_valid:
-            logger.info("Critic Node: APPROVED.")
-            return {"critic_feedback": ""}
-        else:
-            logger.warning(f"Critic Node: REJECTED. Feedback: {feedback}")
-            
-            if thread_id:
-                await publish_thought(f"stream:{thread_id}", f"\n\n> Critic Rejected Itinerary:\n> {feedback}\n")
-            
-            # --- THE INTRA-TURN STATE COLLAPSER ---
-            # If the critic rejects, we delete the bad final AI message so it can try again
-            # WITHOUT wiping the successful tools it used in previous loops.
-            drop_commands = []
-            if messages and messages[-1].type == "ai":
-                if messages[-1].id:
-                    drop_commands.append(RemoveMessage(id=messages[-1].id))
-            
-            return {
-                "critic_feedback": f"CRITIC REJECTION: {evaluation.feedback}",
-                "retry_count": retry_count + 1,
-                "messages": drop_commands # This physically deletes the bad AI response
-            }
-            
-    except Exception as e:
-        logger.error(f"Critic Node failed: {e}")
-        # If the critic crashes, default to pass
+    logger.info(f"Critic Node: Evaluating draft (Retry {retry_count}/3)...")
+    evaluation = structured_llm.invoke(system_prompt)
+    
+    # Fallback for Gemini returning a raw dict instead of Pydantic model
+    if isinstance(evaluation, dict):
+        is_valid = evaluation.get("is_valid", True)
+        feedback = evaluation.get("feedback", "")
+    else:
+        is_valid = getattr(evaluation, "is_valid", True)
+        feedback = getattr(evaluation, "feedback", "")
+    
+    if is_valid:
+        logger.info("Critic Node: APPROVED.")
         return {"critic_feedback": ""}
+    else:
+        logger.warning(f"Critic Node: REJECTED. Feedback: {feedback}")
+        
+        if thread_id:
+            await publish_thought(f"stream:{thread_id}", f"\n\n> Critic Rejected Itinerary:\n> {feedback}\n")
+        
+        # --- THE INTRA-TURN STATE COLLAPSER ---
+        # If the critic rejects, we delete the bad final AI message so it can try again
+        # WITHOUT wiping the successful tools it used in previous loops.
+        drop_commands = []
+        if messages and messages[-1].type == "ai":
+            if messages[-1].id:
+                drop_commands.append(RemoveMessage(id=messages[-1].id))
+        
+        return {
+            "critic_feedback": f"CRITIC REJECTION: {evaluation.feedback}",
+            "retry_count": retry_count + 1,
+            "messages": drop_commands # This physically deletes the bad AI response
+        }

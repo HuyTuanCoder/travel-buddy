@@ -1,6 +1,7 @@
 import json
 from langchain_core.tools import tool
 from pydantic import BaseModel, Field
+from src.core.error_handlers import tool_error_boundary
 
 # 1. Pydantic Contracts
 
@@ -27,6 +28,7 @@ class DraftRemoveDayArgs(BaseModel):
 # 2. Tool Bindings
 
 @tool("draft_add_stop", args_schema=DraftAddStopArgs)
+@tool_error_boundary
 def draft_add_stop(day_number: int, google_place_id: str, name: str, stop_type: str, user_notes: str = "", arrival_time: str = "", departure_time: str = "", estimated_cost: str = "") -> str:
     """
     Call this tool to incrementally build the user's itinerary DRAFT in memory.
@@ -60,6 +62,7 @@ class DraftMoveStopArgs(BaseModel):
     new_visit_order: int = Field(default=None, description="Optional. The exact 0-indexed position to place the stop in the new day. If moving within the same day, use this to reorder.")
 
 @tool("draft_remove_stop", args_schema=DraftRemoveStopArgs)
+@tool_error_boundary
 def draft_remove_stop(google_place_id: str, day_number: int) -> str:
     """
     Call this tool to remove a stop from the user's itinerary DRAFT in memory.
@@ -72,6 +75,7 @@ def draft_remove_stop(google_place_id: str, day_number: int) -> str:
     return json.dumps(draft_item)
 
 @tool("draft_update_stop", args_schema=DraftUpdateStopArgs)
+@tool_error_boundary
 def draft_update_stop(google_place_id: str, day_number: int, user_notes: str = "", arrival_time: str = "", departure_time: str = "", estimated_cost: str = "") -> str:
     """
     Call this tool to update the notes or timings of an existing stop in the itinerary DRAFT in memory.
@@ -88,6 +92,7 @@ def draft_update_stop(google_place_id: str, day_number: int, user_notes: str = "
     return json.dumps(draft_item)
 
 @tool("draft_move_stop", args_schema=DraftMoveStopArgs)
+@tool_error_boundary
 def draft_move_stop(google_place_id: str, old_day_number: int, new_day_number: int, new_visit_order: int = None) -> str:
     """
     Call this tool to move a stop across days OR reorder it within the same day.
@@ -103,6 +108,7 @@ def draft_move_stop(google_place_id: str, old_day_number: int, new_day_number: i
     return json.dumps(draft_item)
 
 @tool("draft_add_day", args_schema=DraftAddDayArgs)
+@tool_error_boundary
 def draft_add_day(scheduled_date: str = "") -> str:
     """
     Call this tool to append a new day to the itinerary DRAFT.
@@ -113,6 +119,7 @@ def draft_add_day(scheduled_date: str = "") -> str:
     })
 
 @tool("draft_remove_day", args_schema=DraftRemoveDayArgs)
+@tool_error_boundary
 def draft_remove_day(day_number: int) -> str:
     """
     Call this tool to remove an entire day and its stops from the itinerary DRAFT.

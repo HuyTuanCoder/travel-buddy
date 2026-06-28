@@ -55,6 +55,6 @@ def get_llm(model_name: str = "gemini-2.5-flash", temperature: float = 0) -> Cha
         temperature=temperature,
         project=settings.GCP_PROJECT_ID,
         location=settings.GCP_LOCATION,
-        stream_usage=True,
+        streaming=True,
         # GOOGLE_APPLICATION_CREDENTIALS must be set in the environment or Docker mount
     )

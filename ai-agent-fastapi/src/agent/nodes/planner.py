@@ -3,11 +3,13 @@ from langchain_core.messages import SystemMessage, HumanMessage
 import structlog
 import asyncio
 import os
+import json
 
 from src.schemas.agent import AgentState
 from src.core.config import get_llm
 from src.core.telemetry import publish_thought
 from langchain_core.runnables import RunnableConfig
+from src.core.error_handlers import node_error_boundary
 
 logger = structlog.get_logger(__name__)
 
@@ -16,6 +18,7 @@ class PlanChecklist(BaseModel):
         description="A strict, step-by-step checklist of actions to fulfill the user's request."
     )
 
+@node_error_boundary
 async def plan_itinerary(state: AgentState, config: RunnableConfig):
     """
     Gate 1: The Planner Node.
@@ -43,7 +46,6 @@ async def plan_itinerary(state: AgentState, config: RunnableConfig):
     rag_context = state.get("rag_context", "")
     itinerary_draft = state.get("itinerary_draft", {})
     user_modifications = state.get("user_modifications", {})
-    import json
     draft_context = json.dumps(itinerary_draft, indent=2) if itinerary_draft else "The draft is currently empty."
     user_mod_context = json.dumps(user_modifications, indent=2) if user_modifications else "No manual user modifications detected."
             
@@ -69,65 +71,60 @@ async def plan_itinerary(state: AgentState, config: RunnableConfig):
        - LEVEL 2: The USER MODIFICATIONS METADATA. If a stop has `isUserModified: true` in this JSON, it means the user explicitly dragged/edited it in their UI sandbox. Treat it as UNTOUCHABLE ground truth. DO NOT move or delete it unless Level 1 explicitly asked you to!
        - LEVEL 3 (Lowest): Previous known constraints (RAG Context).
        
-       2. Dynamic Incremental Drafting:
-       - Assess how much detail the user provided in their Latest Request.
-       - If they ask for a massive multi-day trip but provide almost NO specifics (e.g. "Plan a 14 day trip"), use `draft_add_day` in parallel to create the skeleton (Days 1-14), but ONLY populate Day 1 with `draft_add_stop`. Stop there and ask for feedback!
-       - HOWEVER, if they explicitly outline their ideas for multiple days (e.g. "Day 1 Beach, Day 2 Museum"), boldly generate all those days in full to match their detail. Use your judgement.
+    2. EXPERT TRAVEL AGENT CONSULTATION PHASES (STATE-AWARE PLANNING):
+       You MUST evaluate the entire conversation history to determine which Phase we are currently in. You MUST ONLY output a plan for the CURRENT TURN. Do NOT output a multi-phase plan. Once your plan for the turn is complete, the graph will pause and wait for the user.
+
+       - PHASE 1: Consultation & Discovery (The "Why" & "What")
+         Condition: The user has provided a destination but lacks basic constraints (dates, budget) OR hasn't shared the "vibe" or emotional goal of the trip.
+         Action: Output a plan to ask open-ended, discovery-based questions (e.g., "What do you want this vacation to feel like?"). YOU ARE BANNED FROM DRAFTING OR PITCHING.
+
+       - PHASE 2: Collaborative Gathering Loop (The "Where" & "When")
+         Condition: Basic constraints are known, but you do NOT yet have a comprehensive list of CONFIRMED points of interest (POIs), timing preferences, and pacing details for the entire trip.
+         Action: Output a plan to `search_web` for POIs that match the vibe, present curated options (Option A vs Option B), and actively ask logistical questions (e.g., "Would you prefer this in the morning?", "What time do you usually start your day?", "Do you want a packed schedule?").
+         Rule: You MUST stay in this phase across multiple turns to build a massive repository of confirmed preferences in the chat history. YOU ARE BANNED FROM DRAFTING. Only when you have gathered enough details to confidently fill a substantial portion of the trip, you may end your plan by instructing the agent to ask: "Are you ready for me to draft this into a schedule?"
+
+       - PHASE 3: Itinerary Design (The Draft)
+         Condition: The user has explicitly consented to drafting (e.g., "Yes, make the draft now") AFTER the Phase 2 gathering loop is complete.
+         Action: Output a plan to officially lock in the confirmed POIs using `find_and_register_place`, create the skeleton using `draft_add_day`, and schedule everything using `draft_add_stop` according to their preferred pacing and timing.
+
+       - PHASE 4: Refinement (Post-Draft)
+         Condition: A draft exists, and the user is asking for tweaks.
+         Action: Output a plan to use `draft_update_stop`, `draft_move_stop`, or `draft_remove_stop` to polish the itinerary.
+
+    3. DEEP RESEARCH CHAINING: Actively encourage the agent to use `search_web` to discover URLs in Phase 2. IF AND ONLY IF the search snippets are not detailed enough, explicitly command the agent to use `read_webpage` on the specific URL returned by the search.
     
-    CRITICAL PLANNING RULES:
-    1. VAGUE REQUESTS: If the user simply says "Plan a trip to X" with no dates, budget, or preferences, DO NOT generate a plan to build the itinerary. Instead, output a plan to: "Ask the user clarifying questions about dates, budget, and dietary preferences."
-    
-    2. EXECUTION WAVES (CRITICAL DEPENDENCY CHAIN): 
-       You MUST structure your plan in sequential waves, while encouraging parallel execution INSIDE each wave. The Agent CANNOT call `draft_add_stop` if it doesn't have a `google_place_id` yet!
-       - WAVE 1 (Structure & Discovery): Instruct the Agent to call `draft_add_day` (multiple times in parallel if needed) AND `search_web` in parallel. Then WAIT for results.
-       - WAVE 2 (Registration): Instruct the Agent to call `find_and_register_place` multiple times in parallel for the discovered places. Then WAIT for the IDs.
-       - WAVE 3 (Drafting): Instruct the Agent to call `draft_add_stop` multiple times in parallel using the registered IDs.
-       
-    3. DEEP RESEARCH CHAINING: Actively encourage the agent to use `search_web` to discover URLs. IF AND ONLY IF the search snippets are not detailed enough, explicitly command the agent to use `read_webpage` on the specific URL returned by the search. Do NOT assume the agent will do this on its own.
-    
-    1-SHOT EXAMPLE OF A PERFECT PLAN:
-    User Request: "Let's plan day 1 in Paris. I want to visit the Louvre, get some sushi, and then see the Eiffel Tower."
-    Output:
-    [
-      "WAVE 1: Check RAG constraints for sushi preferences. Call search_web to find the best sushi near the Louvre.",
-      "WAVE 2: Call find_and_register_place 3 times in parallel for 'The Louvre Paris', 'The Sushi Restaurant you found', and 'Eiffel Tower Paris'.",
-      "WAVE 3: Call draft_add_stop 3 times in parallel to add the registered locations to Day 1, ensuring the times are sequential (Morning -> Lunch -> Afternoon)."
-    ]
-    5. LONG-TERM MEMORY (AGENTIC RAG): If the user refers to past conversations, past preferences, or says things like 'remember what I told you', you MUST instruct the agent to use the `search_past_conversations` tool. If this tool returns no results, DO NOT guess or hallucinate. Instruct the agent to apologize to the user and ask them to remind you what they said.
+    4. LONG-TERM MEMORY (AGENTIC RAG): If the user refers to past conversations, past preferences, or says things like 'remember what I told you', you MUST instruct the agent to use the `search_past_conversations` tool.
     
     Do NOT execute the actions. Just write the checklist.
-    Example Vague: ["Push back and ask user for trip duration, budget, and preferences"]
-    Example Detailed: ["Search web for trendy Sushi restaurants", "Register top sushi restaurant with find_and_register_place", "Append registered sushi restaurant to the itinerary_draft", "Show draft to user for approval"]
+    Example Phase 1: ["Push back and ask user for trip duration, budget, and the vibe they are looking for"]
+    Example Phase 2: ["Search web for trendy Sushi restaurants", "Present top 2 sushi options to the user and ask if they prefer an early or late dinner reservation"]
+    Example Phase 3: ["Register the confirmed sushi restaurant with find_and_register_place", "Append it to Day 1 evening slot using draft_add_stop"]
     """
     
-    try:
-        logger.info("Planner Node: Generating CoT checklist...")
-        
-        # Combine system prompt, recent transcript, and immediate request into a single string to avoid Gemini SystemMessage ordering bugs
-        combined_prompt = f"{system_prompt}\n\nRECENT CHAT HISTORY:\n{transcript}\n\nIMMEDIATE USER REQUEST:\n{latest_request}"
+    logger.info("Planner Node: Generating CoT checklist...")
+    
+    # Combine system prompt, recent transcript, and immediate request into a single string to avoid Gemini SystemMessage ordering bugs
+    combined_prompt = f"{system_prompt}\n\nRECENT CHAT HISTORY:\n{transcript}\n\nIMMEDIATE USER REQUEST:\n{latest_request}"
 
+    
+    # We invoke the LLM with the combined prompt
+    plan_output = structured_llm.invoke(combined_prompt)
+    
+    if hasattr(plan_output, 'steps'):
+        steps = plan_output.steps
+    elif isinstance(plan_output, list) and len(plan_output) > 0 and isinstance(plan_output[0], dict):
+        # Handle langchain-google-vertexai 1.0.4 returning raw OpenAI tool schema format
+        steps = plan_output[0].get("args", {}).get("steps", [])
+    else:
+        steps = []
         
-        # We invoke the LLM with the combined prompt
-        plan_output = structured_llm.invoke(combined_prompt)
-        
-        if hasattr(plan_output, 'steps'):
-            steps = plan_output.steps
-        elif isinstance(plan_output, list) and len(plan_output) > 0 and isinstance(plan_output[0], dict):
-            # Handle langchain-google-vertexai 1.0.4 returning raw OpenAI tool schema format
-            steps = plan_output[0].get("args", {}).get("steps", [])
-        else:
-            steps = []
-            
-        if thread_id and steps:
-            formatted_steps = "\n> ".join(steps)
-            await publish_thought(f"stream:{thread_id}", f"\n\n> Created Execution Plan:\n> {formatted_steps}\n")
-        
-        # Reset retry_count on new plan
-        return {
-            "plan": steps,
-            "retry_count": 0,
-            "critic_feedback": ""
-        }
-    except Exception as e:
-        logger.error(f"Planner Node failed: {e}")
-        return {"plan": ["Acknowledge user request.", "Proceed with default execution."]}
+    if thread_id and steps:
+        formatted_steps = "\n> ".join(steps)
+        await publish_thought(f"stream:{thread_id}", f"\n\n> Created Execution Plan:\n> {formatted_steps}\n")
+    
+    # Reset retry_count on new plan
+    return {
+        "plan": steps,
+        "retry_count": 0,
+        "critic_feedback": ""
+    }

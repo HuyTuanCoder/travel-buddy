@@ -5,9 +5,11 @@ from src.core.config import get_llm
 from src.core.telemetry import publish_thought
 import asyncio
 from langchain_core.runnables import RunnableConfig
+from src.core.error_handlers import node_error_boundary
 
 logger = structlog.get_logger(__name__)
 
+@node_error_boundary
 async def early_exit_node(state: AgentState, config: RunnableConfig):
     """
     Gate 0.5: The Early Exit Node.
@@ -21,10 +23,7 @@ async def early_exit_node(state: AgentState, config: RunnableConfig):
     
     thread_id = config.get("configurable", {}).get("thread_id", "")
     if thread_id:
-        try:
-            await publish_thought(f"stream:{thread_id}", f"Generating fast response for {intent}...")
-        except Exception as e:
-            logger.warning(f"Failed to publish thought: {e}")
+        await publish_thought(f"stream:{thread_id}", f"Generating fast response for {intent}...")
     
     llm = get_llm(temperature=0.7) # Slightly higher temp for conversational tone
     
@@ -35,31 +34,17 @@ async def early_exit_node(state: AgentState, config: RunnableConfig):
     else: # OUT_OF_DOMAIN
         system_prompt = "The user is asking you to do something outside your domain (like write code, do math, or discuss politics). Politely decline, stating that you are an AI Travel Assistant and can only help with trip itineraries."
         
-    try:
-        response = await llm.ainvoke([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": str(messages[-1].content) if messages else ""}
-        ])
+    response = await llm.ainvoke([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": str(messages[-1].content) if messages else ""}
+    ])
+    
+    malicious_msg_id = messages[-1].id if messages else None
+    refusal = AIMessage(content=response.content)
+    
+    return_payload = {"messages": [refusal]}
+    if malicious_msg_id:
+        from langchain_core.messages import RemoveMessage
+        return_payload["messages"].append(RemoveMessage(id=malicious_msg_id))
         
-        malicious_msg_id = messages[-1].id if messages else None
-        refusal = AIMessage(content=response.content)
-        
-        return_payload = {"messages": [refusal]}
-        if malicious_msg_id:
-            from langchain_core.messages import RemoveMessage
-            return_payload["messages"].append(RemoveMessage(id=malicious_msg_id))
-            
-        return return_payload
-        
-    except Exception as e:
-        logger.error(f"Early exit response failed: {e}")
-        
-        malicious_msg_id = messages[-1].id if messages else None
-        refusal = AIMessage(content="I'm sorry, I am a Travel Assistant and can only help you plan trips!")
-        
-        return_payload = {"messages": [refusal]}
-        if malicious_msg_id:
-            from langchain_core.messages import RemoveMessage
-            return_payload["messages"].append(RemoveMessage(id=malicious_msg_id))
-            
-        return return_payload
+    return return_payload

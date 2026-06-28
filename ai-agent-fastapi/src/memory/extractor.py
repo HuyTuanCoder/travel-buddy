@@ -49,11 +49,7 @@ def _llm_extraction(new_messages: list[str], current_facts: list[dict] = None) -
     5. Return ONLY the JSON array of ExtractedFact objects. If nothing important is found, return an empty array.
     """
     
-    try:
-        logger.info(f"Extracting memory from {len(new_messages)} new messages using pure LLM...")
-        facts = structured_llm.invoke(prompt)
-        # Ensure it's a list even if LLM returns None
-        return facts if facts else []
-    except Exception as e:
-        logger.error(f"LLM Extraction failed: {e}")
-        return []
+    logger.info(f"Extracting memory from {len(new_messages)} new messages using pure LLM...")
+    facts = structured_llm.invoke(prompt)
+    # Ensure it's a list even if LLM returns None
+    return facts if facts else []

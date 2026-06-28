@@ -4,8 +4,8 @@ from langchain_core.messages import HumanMessage
 from src.schemas.agent import AgentState
 from src.core.config import get_llm
 from src.core.telemetry import publish_thought
-import asyncio
 from langchain_core.runnables import RunnableConfig
+from src.core.error_handlers import node_error_boundary
 
 logger = structlog.get_logger(__name__)
 
@@ -17,6 +17,7 @@ class IntentClassification(BaseModel):
         description="A brief sentence explaining why this intent was chosen."
     )
 
+@node_error_boundary
 async def semantic_router(state: AgentState, config: RunnableConfig):
     """
     Gate 0: The Semantic Router.
@@ -26,10 +27,7 @@ async def semantic_router(state: AgentState, config: RunnableConfig):
     """
     thread_id = config.get("configurable", {}).get("thread_id", "")
     if thread_id:
-        try:
-            await publish_thought(f"stream:{thread_id}", "Semantic Router checking message intent...")
-        except Exception as e:
-            logger.warning(f"Failed to publish thought: {e}")
+        await publish_thought(f"stream:{thread_id}", "Semantic Router checking message intent...")
 
     messages = state.get("messages", [])
     if not messages:
@@ -65,33 +63,28 @@ async def semantic_router(state: AgentState, config: RunnableConfig):
     Message: "Add a museum to day 1." -> TRAVEL_PLANNING
     """
     
-    try:
-        logger.info("Gate 0: Semantic Router classifying intent...")
-        classification = await structured_llm.ainvoke([
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": str(latest_msg.content)}
-        ])
+    logger.info("Gate 0: Semantic Router classifying intent...")
+    classification = await structured_llm.ainvoke([
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": str(latest_msg.content)}
+    ])
+    
+    # Handle dict vs object return based on LLM implementation
+    if isinstance(classification, dict):
+        intent = classification.get("intent", "TRAVEL_PLANNING")
+    else:
+        intent = getattr(classification, "intent", "TRAVEL_PLANNING")
         
-        # Handle dict vs object return based on LLM implementation
-        if isinstance(classification, dict):
-            intent = classification.get("intent", "TRAVEL_PLANNING")
-        else:
-            intent = getattr(classification, "intent", "TRAVEL_PLANNING")
-            
-        logger.info(f"Gate 0 Result: {intent}")
+    logger.info(f"Gate 0 Result: {intent}")
+    
+    # If it's a reset, we return state updates to mute RAG and clear drafts!
+    if intent == "TRAVEL_PLANNING_RESET":
+        logger.info("Semantic Router detected RESET. Clearing draft, summary, and muting RAG for this turn.")
+        return {
+            "intent": intent,
+            "itinerary_draft": [],
+            "running_summary": "",
+            "rag_context": "" # Mute the RAG Injector for this turn
+        }
         
-        # If it's a reset, we return state updates to mute RAG and clear drafts!
-        if intent == "TRAVEL_PLANNING_RESET":
-            logger.info("Semantic Router detected RESET. Clearing draft, summary, and muting RAG for this turn.")
-            return {
-                "intent": intent,
-                "itinerary_draft": [],
-                "running_summary": "",
-                "rag_context": "" # Mute the RAG Injector for this turn
-            }
-            
-        return {"intent": intent}
-        
-    except Exception as e:
-        logger.error(f"Router failed, defaulting to TRAVEL_PLANNING: {e}")
-        return {"intent": "TRAVEL_PLANNING"}
+    return {"intent": intent}

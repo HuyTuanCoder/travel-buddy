@@ -5,18 +5,20 @@ from src.schemas.agent import AgentState
 
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
 from src.agent.tools.memory import search_past_conversations
-from src.agent.tools.draft import draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop_between_days
+from src.agent.tools.draft import draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, draft_add_day, draft_remove_day
 from src.core.config import get_llm
 import json
 from langchain_core.runnables import RunnableConfig
+from src.core.error_handlers import node_error_boundary
 
 logger = structlog.get_logger(__name__)
 
 ALL_TOOLS = [
     search_web, read_webpage, find_and_register_place, search_past_conversations,
-    draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop_between_days
+    draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, draft_add_day, draft_remove_day
 ]
 
+@node_error_boundary
 async def call_executor(state: AgentState, config: RunnableConfig):
     # Instantiate LLM inside the function to avoid gRPC event loop binding issues in Celery prefork workers.
     # planner.py and critic.py already do this correctly.
@@ -48,66 +50,69 @@ async def call_executor(state: AgentState, config: RunnableConfig):
     
     for tool_msg in recent_tools:
         if tool_msg.name in ["draft_add_stop", "draft_remove_stop", "draft_update_stop", "draft_move_stop", "draft_add_day", "draft_remove_day"]:
-            try:
-                action_data = json.loads(tool_msg.content)
-                action = action_data.get("action")
+            content_str = str(tool_msg.content)
+            # If the tool failed validation or crashed, it returns a [System] string. Skip parsing.
+            if content_str.startswith("[System]") or content_str.startswith("Error:"):
+                continue
                 
-                if action == "add_day":
-                    next_day = len(itinerary_draft["days"]) + 1
-                    itinerary_draft["days"].append({"dayNumber": next_day, "stops": []})
+            action_data = json.loads(content_str)
+            action = action_data.get("action")
+            
+            if action == "add_day":
+                next_day = len(itinerary_draft["days"]) + 1
+                itinerary_draft["days"].append({"dayNumber": next_day, "stops": []})
+            
+            elif action == "remove_day":
+                itinerary_draft["days"] = [d for d in itinerary_draft["days"] if d.get("dayNumber") != action_data.get("day_number")]
+            
+            elif action == "add":
+                day_num = action_data.get("day_number")
+                day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == day_num), None)
+                if day is not None:
+                    day.setdefault("stops", []).append({
+                        "googlePlaceId": action_data.get("google_place_id"),
+                        "locationName": action_data.get("name"),
+                        "category": action_data.get("stop_type"),
+                        "arrivalTime": action_data.get("arrival_time"),
+                        "departureTime": action_data.get("departure_time")
+                    })
+            
+            elif action == "remove":
+                day_num = action_data.get("day_number")
+                place_id = action_data.get("google_place_id")
+                day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == day_num), None)
+                if day is not None and "stops" in day:
+                    day["stops"] = [s for s in day["stops"] if s.get("googlePlaceId") != place_id]
+            
+            elif action == "update":
+                day_num = action_data.get("day_number")
+                place_id = action_data.get("google_place_id")
+                day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == day_num), None)
+                if day is not None:
+                    for stop in day.get("stops", []):
+                        if stop.get("googlePlaceId") == place_id:
+                            if action_data.get("arrival_time"):
+                                stop["arrivalTime"] = action_data["arrival_time"]
+                            if action_data.get("departure_time"):
+                                stop["departureTime"] = action_data["departure_time"]
+            
+            elif action == "move":
+                old_day_num = action_data.get("old_day_number")
+                new_day_num = action_data.get("new_day_number")
+                place_id = action_data.get("google_place_id")
+                new_order = action_data.get("new_visit_order")
                 
-                elif action == "remove_day":
-                    itinerary_draft["days"] = [d for d in itinerary_draft["days"] if d.get("dayNumber") != action_data.get("day_number")]
+                old_day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == old_day_num), None)
+                new_day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == new_day_num), None)
                 
-                elif action == "add":
-                    day_num = action_data.get("day_number")
-                    day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == day_num), None)
-                    if day is not None:
-                        day.setdefault("stops", []).append({
-                            "googlePlaceId": action_data.get("google_place_id"),
-                            "locationName": action_data.get("name"),
-                            "category": action_data.get("stop_type"),
-                            "arrivalTime": action_data.get("arrival_time"),
-                            "departureTime": action_data.get("departure_time")
-                        })
-                
-                elif action == "remove":
-                    day_num = action_data.get("day_number")
-                    place_id = action_data.get("google_place_id")
-                    day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == day_num), None)
-                    if day is not None and "stops" in day:
-                        day["stops"] = [s for s in day["stops"] if s.get("googlePlaceId") != place_id]
-                
-                elif action == "update":
-                    day_num = action_data.get("day_number")
-                    place_id = action_data.get("google_place_id")
-                    day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == day_num), None)
-                    if day is not None:
-                        for stop in day.get("stops", []):
-                            if stop.get("googlePlaceId") == place_id:
-                                if action_data.get("arrival_time"): stop["arrivalTime"] = action_data["arrival_time"]
-                                if action_data.get("departure_time"): stop["departureTime"] = action_data["departure_time"]
-                
-                elif action == "move":
-                    old_day_num = action_data.get("old_day_number")
-                    new_day_num = action_data.get("new_day_number")
-                    place_id = action_data.get("google_place_id")
-                    new_order = action_data.get("new_visit_order")
-                    
-                    old_day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == old_day_num), None)
-                    new_day = next((d for d in itinerary_draft["days"] if d.get("dayNumber") == new_day_num), None)
-                    
-                    if old_day and new_day and "stops" in old_day:
-                        target_stop = next((s for s in old_day["stops"] if s.get("googlePlaceId") == place_id), None)
-                        if target_stop:
-                            old_day["stops"] = [s for s in old_day["stops"] if s.get("googlePlaceId") != place_id]
-                            if new_order is not None and new_order < len(new_day.setdefault("stops", [])):
-                                new_day["stops"].insert(new_order, target_stop)
-                            else:
-                                new_day.setdefault("stops", []).append(target_stop)
-                                
-            except Exception as e:
-                logger.error(f"Agent Node failed to parse draft tool output: {e}")
+                if old_day and new_day and "stops" in old_day:
+                    target_stop = next((s for s in old_day["stops"] if s.get("googlePlaceId") == place_id), None)
+                    if target_stop:
+                        old_day["stops"] = [s for s in old_day["stops"] if s.get("googlePlaceId") != place_id]
+                        if new_order is not None and new_order < len(new_day.setdefault("stops", [])):
+                            new_day["stops"].insert(new_order, target_stop)
+                        else:
+                            new_day.setdefault("stops", []).append(target_stop)
     
     # Construct a static System Prompt for identity
     sys_msg = SystemMessage(content="You are an AI Travel Agent Executor.")

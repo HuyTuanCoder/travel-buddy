@@ -84,10 +84,12 @@ async def chat_history(trip_id: str):
     from sqlalchemy import select
     import uuid
     
+    from fastapi import HTTPException
+    
     try:
         trip_uuid = uuid.UUID(trip_id)
     except ValueError:
-        return {"messages": []}
+        raise HTTPException(status_code=400, detail="Invalid trip_id format. Must be a valid UUID.")
         
     async with AsyncSessionLocal() as session:
         result = await session.execute(
@@ -103,15 +105,18 @@ async def chat_history(trip_id: str):
         # Format the Langchain messages for the frontend
         formatted_history = []
         for msg in messages:
-            msg_type = msg.get("type", "")
+            # Support both legacy "type": "human/ai" and new "role": "user/agent" formats
+            msg_role = msg.get("role", msg.get("type", ""))
+            if msg_role == "human":
+                msg_role = "user"
+            if msg_role == "ai":
+                msg_role = "agent"
+            
             msg_content = msg.get("content", "")
             msg_id = msg.get("id", "")
             
-            if msg_type == "human":
-                formatted_history.append({"id": msg_id, "role": "user", "content": str(msg_content)})
-            elif msg_type == "ai":
-                if msg_content:
-                    formatted_history.append({"id": msg_id, "role": "agent", "content": str(msg_content)})
+            if msg_role in ["user", "agent"] and msg_content:
+                formatted_history.append({"id": msg_id, "role": msg_role, "content": str(msg_content)})
                 
         return {"messages": formatted_history}
 
@@ -131,7 +136,6 @@ async def stream_chat(trip_id: str, request: Request):
         await pubsub.subscribe(f"stream:{trip_id}")
         
         import time
-        last_event_time = time.monotonic()
         last_heartbeat_time = time.monotonic()
         
         try:
@@ -146,7 +150,7 @@ async def stream_chat(trip_id: str, request: Request):
                 
                 # Heartbeat keepalive every SSE_HEARTBEAT_INTERVAL seconds
                 if now - last_heartbeat_time > SSE_HEARTBEAT_INTERVAL:
-                    yield f": heartbeat\n\n"
+                    yield ": heartbeat\n\n"
                     last_heartbeat_time = now
                 
                 # Fetch message from redis
@@ -154,9 +158,18 @@ async def stream_chat(trip_id: str, request: Request):
                 if message is not None:
                     # Message is formatted as bytes, need to decode
                     data = message["data"].decode("utf-8")
+                    
+                    try:
+                        event_dict = json.loads(data)
+                        if event_dict.get("type") == "done":
+                            # Stream the final done event and cleanly break the loop
+                            yield f"data: {data}\n\n"
+                            break
+                    except json.JSONDecodeError:
+                        pass
+                        
                     # Format strictly as SSE: "data: {json}\n\n"
                     yield f"data: {data}\n\n"
-                    last_event_time = now
                     
                 await asyncio.sleep(0.1) # Small sleep to prevent CPU spin
         except Exception as e:

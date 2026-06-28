@@ -120,7 +120,11 @@ public class ItineraryGrpcServiceImpl extends ItineraryGrpcServiceGrpc.Itinerary
         log.info("[gRPC] MoveStop for Stop: {} to Trip: {}, Day: {}", request.getStopId(), request.getTripId(), request.getTargetDayNumber());
         try {
             UUID targetDayId = resolveDayId(request.getTripId(), request.getTargetDayNumber());
-            TripStopResponse result = timelineService.moveStop(UUID.fromString(request.getStopId()), targetDayId, request.getUserId());
+            com.travelbuddy.itineraryservice.dto.MoveStopRequest moveReq = new com.travelbuddy.itineraryservice.dto.MoveStopRequest();
+            moveReq.setTargetDayId(targetDayId);
+            moveReq.setTargetVisitOrder(null);
+            
+            TripStopResponse result = timelineService.moveStop(UUID.fromString(request.getStopId()), moveReq, request.getUserId());
             responseObserver.onNext(mapToGrpcResponse(result));
             responseObserver.onCompleted();
         } catch (Exception e) {

@@ -18,7 +18,6 @@ async def reflection_node(state: AgentState, config: RunnableConfig):
         return state
         
     last_message = messages[-1]
-    tool_call_id = getattr(last_message, "tool_call_id", "unknown")
     tool_name = getattr(last_message, "name", "unknown")
     tool_content = str(last_message.content)
     
