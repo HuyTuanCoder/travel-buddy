@@ -1,5 +1,3 @@
-version: '3.8'
-
 # NETWORKS CONFIGURATION
 # Defines a custom bridge network that allows all containers to communicate
 # by service name (e.g., 'auth-service' instead of IP addresses)
@@ -15,6 +13,9 @@ volumes:
   postgres-data:
     driver: local
     name: travel-buddy-postgres-data
+  redis-data:
+  qdrant-data:
+  langfuse-data:
 
 # SERVICES CONFIGURATION
 services:
@@ -184,7 +185,8 @@ services:
       SPRING_DATASOURCE_USERNAME: ${ITINERARY_DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${ITINERARY_DB_PASSWORD}
       SERVER_PORT: 8004
-      GRPC_CLIENT_LOCATION_SERVICE_ADDRESS: "static://location-service:9090"
+      GRPC_SERVER_PORT: ${ITINERARY_GRPC_PORT}
+      GRPC_CLIENT_LOCATION_SERVICE_ADDRESS: "static://location-service:${LOCATION_GRPC_PORT}"
       GRPC_CLIENT_LOCATION_SERVICE_NEGOTIATION_TYPE: "PLAINTEXT"
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
@@ -211,7 +213,7 @@ services:
       SPRING_DATASOURCE_USERNAME: ${LOCATION_DB_USER}
       SPRING_DATASOURCE_PASSWORD: ${LOCATION_DB_PASSWORD}
       SERVER_PORT: 8005
-      GRPC_SERVER_PORT: 9090
+      GRPC_SERVER_PORT: ${LOCATION_GRPC_PORT}
       GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY}
       JAVA_OPTS: "-Xmx256m -Xms256m"
     
@@ -288,3 +290,141 @@ services:
     # Frontend waits for API Gateway to be healthy
     depends_on:
       - api-gateway
+
+  # Redis: High-speed cache for Pub/Sub (SSE Streaming)
+  redis:
+    image: redis:7-alpine
+    container_name: travel-buddy-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - travel-buddy-network
+
+  # RabbitMQ: Enterprise Message Broker for Celery
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: travel-buddy-rabbitmq
+    ports:
+      - "5672:5672" # AMQP Protocol Port
+      - "15672:15672" # Management UI Port
+    environment:
+      RABBITMQ_DEFAULT_USER: enterprise_user
+      RABBITMQ_DEFAULT_PASS: enterprise_password
+    networks:
+      - travel-buddy-network
+
+  # Qdrant: Vector Database for RAG & Semantic Travel Memories
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: travel-buddy-qdrant
+    ports:
+      - "6333:6333" # HTTP
+      - "6334:6334" # gRPC
+    volumes:
+      - qdrant-data:/qdrant/storage
+    networks:
+      - travel-buddy-network
+
+  # Langfuse DB: Dedicated Postgres for storing raw LLM traces
+  langfuse-db:
+    image: postgres:15
+    container_name: travel-buddy-langfuse-db
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=langfuse
+    ports:
+      - "5433:5432" # Exposed on 5433 to prevent clash with main Postgres
+    volumes:
+      - langfuse-data:/var/lib/postgresql/data
+    networks:
+      - travel-buddy-network
+
+  langfuse:
+    image: langfuse/langfuse:2
+    container_name: travel-buddy-langfuse
+    depends_on:
+      - langfuse-db
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@langfuse-db:5432/langfuse
+      - NEXTAUTH_SECRET=enterprise_secret_key
+      - SALT=enterprise_salt
+      - NEXTAUTH_URL=http://localhost:3000
+      - TELEMETRY_ENABLED=false
+    networks:
+      - travel-buddy-network
+
+  # AI Agent Service (FastAPI)
+  # Orchestrates LangGraph tasks and LLM requests
+  # Port: 8007 (Internal / Host)
+  ai-agent-fastapi:
+    image: travel-buddy/ai-agent:latest
+    container_name: ai-agent-fastapi
+    build:
+      context: .
+      dockerfile: ./ai-agent-fastapi/Dockerfile
+    ports:
+      - "${AI_AGENT_PORT}:${AI_AGENT_PORT}"
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCP_LOCATION=${GCP_LOCATION}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-credentials.json
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://enterprise_user:enterprise_password@rabbitmq:5672//
+      - QDRANT_URL=http://qdrant:6333
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - ITINERARY_GRPC_URL=itinerary-service:${ITINERARY_GRPC_PORT}
+      - LOCATION_GRPC_URL=location-service:${LOCATION_GRPC_PORT}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+    volumes:
+      - ./gcp-credentials.json:/app/gcp-credentials.json:ro
+    networks:
+      - travel-buddy-network
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+      - qdrant
+      - itinerary-service
+
+  # AI Agent Celery Worker
+  # Processes long-running LangGraph jobs from the RabbitMQ queue
+  ai-agent-celery:
+    image: travel-buddy/ai-agent:latest
+    container_name: travel-buddy-ai-celery
+    build:
+      context: .
+      dockerfile: ./ai-agent-fastapi/Dockerfile
+    command: ["celery", "-A", "src.workers.setup", "worker", "--loglevel=info"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      - GCP_PROJECT_ID=${GCP_PROJECT_ID}
+      - GCP_LOCATION=${GCP_LOCATION}
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/gcp-credentials.json
+      - REDIS_URL=redis://redis:6379/0
+      - RABBITMQ_URL=amqp://enterprise_user:enterprise_password@rabbitmq:5672//
+      - QDRANT_URL=http://qdrant:6333
+      - GOOGLE_MAPS_API_KEY=${GOOGLE_MAPS_API_KEY}
+      - ITINERARY_GRPC_URL=itinerary-service:${ITINERARY_GRPC_PORT}
+      - LOCATION_GRPC_URL=location-service:${LOCATION_GRPC_PORT}
+      - LANGFUSE_PUBLIC_KEY=${LANGFUSE_PUBLIC_KEY}
+      - LANGFUSE_SECRET_KEY=${LANGFUSE_SECRET_KEY}
+      - LANGFUSE_HOST=${LANGFUSE_HOST}
+      - TAVILY_API_KEY=${TAVILY_API_KEY}
+      - IS_CELERY_WORKER=true
+    volumes:
+      - ./gcp-credentials.json:/app/gcp-credentials.json:ro
+    networks:
+      - travel-buddy-network
+    depends_on:
+      - rabbitmq
+      - postgres
+      - redis

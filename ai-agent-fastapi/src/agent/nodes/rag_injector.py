@@ -1,0 +1,65 @@
+from langchain_core.messages import SystemMessage, HumanMessage
+import asyncio
+import logging
+from src.schemas.agent import AgentState
+from src.memory.embeddings import embed_text
+from src.memory.vector_db import search_memories
+from src.core.telemetry import publish_thought
+from langchain_core.runnables import RunnableConfig
+from src.core.error_handlers import node_error_boundary
+
+logger = logging.getLogger(__name__)
+
+@node_error_boundary
+async def inject_memories(state: AgentState, config: RunnableConfig):
+    """
+    RAG Injector Node: Runs before the LLM.
+    Embeds the user's latest message, searches Qdrant for semantic and deterministic facts,
+    and injects them into the state as a SystemMessage.
+    """
+    messages = state.get("messages", [])
+    if not messages:
+        return {"messages": []}
+
+    # Get the latest message text
+    
+    # We only inject RAG for Human messages, skip if it's a Tool or AI message
+    if not isinstance(messages[-1], HumanMessage):
+        return {"rag_context": state.get("rag_context", "")} # preserve existing
+        
+    # MUTE PROTOCOL: If the user legitimately reset the context, do not inject old facts!
+    if state.get("intent") == "TRAVEL_PLANNING_RESET":
+        logger.info("RAG Injector muted due to TRAVEL_PLANNING_RESET intent.")
+        return {"rag_context": ""}
+        
+    from src.agent.utils import get_conversational_transcript
+    query_text = get_conversational_transcript(messages, turns=3)
+    user_id = config.get("configurable", {}).get("user_id", "default_user")
+    thread_id = config.get("configurable", {}).get("thread_id", "")
+
+    # Embed the query
+    logger.info("Embedding latest user query for RAG...")
+    vector = embed_text(query_text)
+    
+    # Search long-term memory
+    logger.info(f"Searching Qdrant for memories related to: {query_text[:50]}...")
+    memories = search_memories(vector, user_id=user_id, limit=5)
+    
+    if memories:
+        # Format the memories into a system prompt
+        memory_context = "--- Long Term Memories ---\n"
+        for mem in memories:
+            if mem.get("category") == "GENERAL_MEMORY":
+                memory_context += f"- Relevant Past Story: {mem.get('raw_quote')}\n"
+            else:
+                memory_context += f"- {mem.get('permanence')} Constraint ({mem.get('category')}): {mem.get('topic')}. User Sentiment: {mem.get('sentiment')}. Raw quote: '{mem.get('raw_quote')}'\n"
+                
+        logger.info(f"Injected {len(memories)} memories into context.")
+        
+        if thread_id:
+            await publish_thought(f"stream:{thread_id}", f"\n\n> Injected {len(memories)} Passive Memories into context.\n")
+        
+        # We return the context as a separate state variable so it doesn't pollute the permanent messages array.
+        return {"rag_context": memory_context}
+        
+    return {"rag_context": ""}

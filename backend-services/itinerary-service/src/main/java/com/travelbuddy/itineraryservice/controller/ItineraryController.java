@@ -68,6 +68,18 @@ public class ItineraryController {
     return ResponseEntity.ok(response);
   }
 
+  // POST /itineraries/{id}/batch-update — Reconcile the full itinerary draft (Co-Drafting)
+  @PostMapping("/{id}/batch-update")
+  public ResponseEntity<ItineraryDetailResponse> batchUpdateItinerary(
+      @PathVariable UUID id,
+      @Valid @RequestBody BatchUpdateItineraryRequest request,
+      @RequestHeader("X-User-Id") String userId) {
+
+    log.info("[Controller] POST /itineraries/{}/batch-update | userId={}", id, userId);
+    ItineraryDetailResponse response = itineraryService.batchUpdateItinerary(id, request, userId);
+    return ResponseEntity.ok(response);
+  }
+
   // DELETE /itineraries/{id} — delete a trip (owner only, cascades everything)
   @DeleteMapping("/{id}")
   public ResponseEntity<Void> deleteItinerary(

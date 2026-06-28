@@ -1,7 +1,6 @@
 import { Link, useNavigate } from 'react-router-dom'
 import { Plane, LogOut, Settings, User } from 'lucide-react'
 import { useAuth } from '@/contexts/AuthContext'
-import { Button } from '@/components/ui/button'
 
 export default function Navbar() {
   const { isAuthenticated, user, clearAuth } = useAuth()

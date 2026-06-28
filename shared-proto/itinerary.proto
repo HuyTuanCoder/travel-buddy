@@ -1,0 +1,91 @@
+syntax = "proto3";
+
+package com.travelbuddy.itinerary;
+
+option java_multiple_files = true;
+option java_package = "com.travelbuddy.itinerary.grpc";
+option java_outer_classname = "ItineraryProto";
+
+// The gRPC Service Definition exposed to the Python AI Worker
+service ItineraryGrpcService {
+  // Add a stop to a specific day
+  rpc AddStop (AddStopGrpcRequest) returns (TripStopGrpcResponse);
+  
+  // Remove an existing stop
+  rpc RemoveStop (RemoveStopGrpcRequest) returns (EmptyGrpcResponse);
+  
+  // Update the metadata of a stop (times, notes, etc) without moving it
+  rpc UpdateStop (UpdateStopGrpcRequest) returns (TripStopGrpcResponse);
+  
+  // Transactionally move a stop from its current day to a new day
+  rpc MoveStop (MoveStopGrpcRequest) returns (TripStopGrpcResponse);
+}
+
+enum StopTypeGrpc {
+  UNKNOWN = 0;
+  ATTRACTION = 1;
+  RESTAURANT = 2;
+  HOTEL = 3;
+  TRANSIT = 4;
+}
+
+message AddStopGrpcRequest {
+  string trip_id = 1;
+  int32 day_number = 2;
+  string user_id = 3;
+  string google_place_id = 4;
+  StopTypeGrpc stop_type = 5;
+  
+  // Using ISO-8601 strings for Time/Decimal to keep protobuf simple
+  string arrival_time = 6;
+  string departure_time = 7;
+  string estimated_cost = 8;
+  string user_notes = 9;
+}
+
+message RemoveStopGrpcRequest {
+  string stop_id = 1;
+  string user_id = 2;
+}
+
+message UpdateStopGrpcRequest {
+  string stop_id = 1;
+  string user_id = 2;
+  
+  // Optional fields for update. Empty string or UNKNOWN enum means no change.
+  string arrival_time = 3;
+  string departure_time = 4;
+  string estimated_cost = 5;
+  string user_notes = 6;
+  StopTypeGrpc stop_type = 7;
+}
+
+message MoveStopGrpcRequest {
+  string stop_id = 1;
+  string trip_id = 2;
+  int32 target_day_number = 3;
+  string user_id = 4;
+}
+
+message TripStopGrpcResponse {
+  string id = 1;
+  string google_place_id = 2;
+  int32 visit_order = 3;
+  string arrival_time = 4;
+  string departure_time = 5;
+  StopTypeGrpc stop_type = 6;
+  string estimated_cost = 7;
+  string user_notes = 8;
+  
+  // Hydrated location fields
+  string location_name = 9;
+  string address = 10;
+  double latitude = 11;
+  double longitude = 12;
+  string image_url = 13;
+}
+
+message EmptyGrpcResponse {
+  bool success = 1;
+  string message = 2;
+}

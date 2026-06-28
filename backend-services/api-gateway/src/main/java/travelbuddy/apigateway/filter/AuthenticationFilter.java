@@ -34,7 +34,7 @@ public class AuthenticationFilter extends OncePerRequestFilter {
     String path = request.getRequestURI();
 
     // 1. OPEN DOORS: Let Auth traffic through without a token
-    if (path.startsWith("/auth")) {
+    if (path.startsWith("/auth") || path.matches("^/ai/chat/.*/stream$") || path.matches("^/api/v1/ai-stream/chat/.*/stream$")) {
       filterChain.doFilter(request, response);
       return;
     }

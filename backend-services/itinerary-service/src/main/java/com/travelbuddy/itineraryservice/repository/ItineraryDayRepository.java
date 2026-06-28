@@ -21,6 +21,9 @@ public interface ItineraryDayRepository extends JpaRepository<ItineraryDay, UUID
   @Query("SELECT MAX(d.dayNumber) FROM ItineraryDay d WHERE d.itinerary.id = :itineraryId")
   Optional<Integer> findMaxDayNumberByItineraryId(@Param("itineraryId") UUID itineraryId);
 
+  // Look up a specific day by trip and number (for AI tools)
+  Optional<ItineraryDay> findByItineraryIdAndDayNumber(UUID itineraryId, Integer dayNumber);
+
   // Cascade delete: remove all days when an itinerary is deleted
   @Modifying
   @Query("DELETE FROM ItineraryDay d WHERE d.itinerary.id = :itineraryId")

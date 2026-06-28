@@ -47,6 +47,7 @@ export interface TripStopResponse {
   stopType: StopType
   estimatedCost: number | null
   userNotes: string | null
+  isDraftDeleted?: boolean
   // Fields populated by the Location Service
   locationName?: string
   address?: string
@@ -60,6 +61,7 @@ export interface ItineraryDayResponse {
   dayNumber: number
   scheduledDate: string | null
   stops: TripStopResponse[]
+  isDraftDeleted?: boolean
 }
 
 export interface ItineraryMemberResponse {

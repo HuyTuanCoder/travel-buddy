@@ -1,0 +1,45 @@
+from typing import TypedDict, Annotated
+from langchain_core.messages import AnyMessage
+from langgraph.graph.message import add_messages
+
+class AgentState(TypedDict):
+    # 1. The Conversation History
+    # 'add_messages' ensures that when a new node returns a message, 
+    # it appends it to the list instead of overwriting the whole list.
+    messages: Annotated[list[AnyMessage], add_messages]
+    
+    # 2. Agentic Planning
+    # The Planner Node generates a strict checklist of actions.
+    plan: list[str]
+    
+    # 3. Reflection / Validation
+    # If the Pydantic Validator catches bad JSON, it will drop the error string here.
+    validation_error: str
+    
+    # 4. Critic Feedback (Linear CoT)
+    # The Critic Node evaluates the itinerary. If it fails, feedback is placed here.
+    critic_feedback: str
+    
+    # 5. Incremental Draft State (Token Saver)
+    # The frontend injects the entire active UI workspace (displayItinerary) here on every turn.
+    itinerary_draft: dict
+    
+    # 6. Failsafe Retry Count
+    # Prevents infinite loops between Agent and Critic.
+    retry_count: int
+    
+    # 7. Ephemeral RAG Context
+    # Stores retrieved memories for the current turn without polluting the global messages array.
+    rag_context: str
+    
+    # 8. Running Summarizer State
+    # Preserves the narrative flow of the conversation even after messages are evicted.
+    running_summary: str
+    
+    # 9. Semantic Intent (Gate 0)
+    # The classification of the user's latest message (e.g. TRAVEL_PLANNING, CHITCHAT)
+    intent: str
+    
+    # 10. Co-Drafting Metadata
+    # Tracks which stops the user has manually touched in the frontend sandbox.
+    user_modifications: dict

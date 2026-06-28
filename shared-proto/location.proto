@@ -11,6 +11,19 @@ option java_outer_classname = "LocationProto";
 service LocationGrpcService {
   // Batch fetch places by their Google Place IDs
   rpc GetPlacesBatch (GetPlacesBatchRequest) returns (GetPlacesBatchResponse);
+  
+  // Hydrate a new location into the database via Google Place ID
+  rpc AddLocation (AddLocationRequest) returns (AddLocationResponse);
+}
+
+// Request: A single googlePlaceId to hydrate
+message AddLocationRequest {
+  string google_place_id = 1;
+}
+
+// Response: The hydrated place info
+message AddLocationResponse {
+  PlaceInfo place = 1;
 }
 
 // Request: A list of googlePlaceIds

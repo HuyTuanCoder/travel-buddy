@@ -97,4 +97,27 @@ public class TimelineController {
     List<TripStopResponse> responses = timelineService.reorderStops(dayId, request, userId);
     return ResponseEntity.ok(responses);
   }
+
+  // PUT /itineraries/stops/{stopId}/move — move a stop across days or within a day
+  @PutMapping("/stops/{stopId}/move")
+  public ResponseEntity<TripStopResponse> moveStop(
+      @PathVariable UUID stopId,
+      @Valid @RequestBody MoveStopRequest request,
+      @RequestHeader("X-User-Id") String userId) {
+
+    log.info("[Controller] PUT /itineraries/stops/{}/move | userId={}", stopId, userId);
+    TripStopResponse response = timelineService.moveStop(stopId, request, userId);
+    return ResponseEntity.ok(response);
+  }
+
+  // PUT /itineraries/{id}/days/swap — swap two days
+  @PutMapping("/{id}/days/swap")
+  public ResponseEntity<Void> swapDays(
+      @PathVariable UUID id,
+      @Valid @RequestBody SwapDaysRequest request,
+      @RequestHeader("X-User-Id") String userId) {
+    log.info("[Controller] PUT /itineraries/{}/days/swap | userId={}", id, userId);
+    timelineService.swapDays(id, request, userId);
+    return ResponseEntity.ok().build();
+  }
 }

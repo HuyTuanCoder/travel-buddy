@@ -1,9 +1,8 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
-import type { PanelImperativeHandle } from "react-resizable-panels"
-import { Users, Map as MapIcon, ChevronLeft, ChevronRight, PlusCircle, Calendar } from 'lucide-react'
+import { Users, Map as MapIcon, ChevronLeft, ChevronRight, Calendar, MessageSquare, Save } from 'lucide-react'
 import { APIProvider } from '@vis.gl/react-google-maps'
-import { DragDropContext } from '@hello-pangea/dnd'
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 import type { DropResult } from '@hello-pangea/dnd'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -16,11 +15,10 @@ import {
 } from '@/components/ui/resizable'
 import { useItineraryDetailLogic } from './hooks/useItineraryDetailLogic'
 import DayColumn from './components/DayColumn'
-import AddStopForm from './components/AddStopForm'
 import MemberPanel from './components/MemberPanel'
 import TripMapVisualizer from './components/TripMapVisualizer'
 import VerticalSidebar from './components/VerticalSidebar'
-
+import AIChatPanel from './components/AIChatPanel'
 // ==================== Status badge styles (same as TripCard) ====================
 
 const statusStyles: Record<string, string> = {
@@ -37,6 +35,10 @@ export default function ItineraryDetailPage() {
 
   const {
     itinerary,
+    draftItinerary,
+    isDraftMode,
+    toggleDraftMode,
+    modifiedStops,
     members,
     isLoading,
     error,
@@ -49,7 +51,11 @@ export default function ItineraryDetailPage() {
     handleAddStop,
     handleUpdateStop,
     handleRemoveStop,
-    handleReorderStops,
+    handleOptimisticDragDrop,
+    handleSwapDays,
+    dispatchDraftActions,
+    handleDraftDiscard,
+    handleDraftSave,
     handleInvite,
     handleRemoveMember,
     handleUpdateMemberRole,
@@ -61,11 +67,13 @@ export default function ItineraryDetailPage() {
   const [isMembersOpen, setIsMembersOpen] = useState(false)
   const [isTimelineOpen, setIsTimelineOpen] = useState(true)
   const [isMapOpen, setIsMapOpen] = useState(true)
+  const [isChatOpen, setIsChatOpen] = useState(true)
 
-  const togglePanel = (panel: 'members' | 'timeline' | 'map') => {
+  const togglePanel = (panel: 'members' | 'timeline' | 'map' | 'chat') => {
     if (panel === 'members') setIsMembersOpen(!isMembersOpen)
     if (panel === 'timeline') setIsTimelineOpen(!isTimelineOpen)
     if (panel === 'map') setIsMapOpen(!isMapOpen)
+    if (panel === 'chat') setIsChatOpen(!isChatOpen)
   }
 
   useEffect(() => {
@@ -75,7 +83,7 @@ export default function ItineraryDetailPage() {
   }, [itinerary?.days, activeTab])
 
   const onDragEnd = (result: DropResult) => {
-    const { source, destination } = result
+    const { source, destination, draggableId, type } = result
     if (!destination) return
 
     if (
@@ -85,23 +93,30 @@ export default function ItineraryDetailPage() {
       return
     }
 
-    if (source.droppableId !== destination.droppableId) {
-      alert('Moving stops between days is not yet supported.')
-      return
+    if (type === 'DAY') {
+      const sourceDay = displayItinerary?.days[source.index];
+      const destDay = displayItinerary?.days[destination.index];
+      if (sourceDay && destDay) {
+        if (isDraftMode) {
+          dispatchDraftActions([{ action: 'swap_days', day_a: sourceDay.dayNumber, day_b: destDay.dayNumber }]);
+        } else {
+          handleSwapDays(sourceDay.dayNumber, destDay.dayNumber);
+        }
+      }
+      return;
     }
 
-    if (!itinerary) return
-
-    const day = itinerary.days.find((d) => d.id === source.droppableId)
-    if (!day) return
-
-    const newStops = Array.from(day.stops)
-    const [movedStop] = newStops.splice(source.index, 1)
-    newStops.splice(destination.index, 0, movedStop)
-
-    const stopIds = newStops.map((s) => s.id)
-    handleReorderStops(source.droppableId, { stopIds })
+    // Pass the exact action to our unified handler
+    handleOptimisticDragDrop(
+      draggableId, 
+      source.droppableId, 
+      destination.droppableId, 
+      source.index, 
+      destination.index
+    );
   }
+
+  const displayItinerary = draftItinerary || itinerary
 
   // --- Loading state ---
   if (isLoading) {
@@ -123,7 +138,7 @@ export default function ItineraryDetailPage() {
   }
 
   // --- Error or not found ---
-  if (!itinerary) {
+  if (!displayItinerary) {
     return (
       <main className="min-h-screen bg-slate-50 flex items-center justify-center">
         <div className="text-center">
@@ -140,7 +155,7 @@ export default function ItineraryDetailPage() {
 
   return (
     <APIProvider apiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY || ''}>
-      <main className="min-h-screen bg-slate-50 text-slate-900">
+      <main className={`min-h-screen text-slate-900 transition-all duration-300 ${isDraftMode ? 'bg-blue-50/30 ring-2 ring-blue-500 shadow-[inset_0_0_20px_rgba(59,130,246,0.1)]' : 'bg-slate-50'}`}>
         <div className="mx-auto max-w-[1400px] px-6 py-8">
         {/* --- Breadcrumb --- */}
         <Link
@@ -155,33 +170,42 @@ export default function ItineraryDetailPage() {
           <div>
             <div className="flex items-center gap-3 mb-1">
               <h1 className="text-2xl font-semibold text-slate-900">
-                {itinerary.title}
+                {displayItinerary.title}
               </h1>
               <Badge
                 variant="outline"
-                className={statusStyles[itinerary.status] ?? ''}
+                className={statusStyles[displayItinerary.status] ?? ''}
               >
-                {itinerary.status.toLowerCase()}
+                {displayItinerary.status.toLowerCase()}
               </Badge>
             </div>
             <p className="text-sm text-slate-500">
-              {itinerary.timezone} · {itinerary.days.length} day
-              {itinerary.days.length !== 1 ? 's' : ''}
+              {displayItinerary.timezone} · {displayItinerary.days.length} day
+              {displayItinerary.days.length !== 1 ? 's' : ''}
             </p>
           </div>
 
           {/* Trip actions */}
           <div className="flex items-center gap-2">
             <Button
+              variant={isDraftMode ? "default" : "outline"}
+              className={isDraftMode ? "bg-blue-600 hover:bg-blue-700 text-white" : "border-slate-300 text-slate-700 hover:bg-slate-100"}
+              size="sm"
+              onClick={() => toggleDraftMode()}
+            >
+              <div className={`w-2 h-2 rounded-full mr-2 ${isDraftMode ? 'bg-green-400' : 'bg-slate-400'}`}></div>
+              Draft Mode: {isDraftMode ? 'ON' : 'OFF'}
+            </Button>
+            <Button
               variant="outline"
               size="sm"
               onClick={() =>
                 handleUpdateItinerary({
-                  status: itinerary.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE',
+                  status: displayItinerary.status === 'ACTIVE' ? 'ARCHIVED' : 'ACTIVE',
                 })
               }
             >
-              {itinerary.status === 'ACTIVE' ? 'Archive' : 'Activate'}
+              {displayItinerary.status === 'ACTIVE' ? 'Archive' : 'Activate'}
             </Button>
             <Button
               variant="outline"
@@ -210,7 +234,6 @@ export default function ItineraryDetailPage() {
           
           {/* GLOBAL LEFT NAV */}
           <VerticalSidebar
-            position="left"
             tabs={[
               {
                 id: 'members',
@@ -232,6 +255,13 @@ export default function ItineraryDetailPage() {
                 icon: MapIcon,
                 onClick: () => togglePanel('map'),
                 isActive: isMapOpen
+              },
+              {
+                id: 'chat',
+                label: 'AI Assistant',
+                icon: MessageSquare,
+                onClick: () => togglePanel('chat'),
+                isActive: isChatOpen
               }
             ]}
           />
@@ -240,7 +270,6 @@ export default function ItineraryDetailPage() {
             
             {/* Left Column: Sidebar (Members) */}
             {isMembersOpen && (
-              <>
                 <ResizablePanel 
                   defaultSize={20} 
                   minSize={15} 
@@ -267,24 +296,25 @@ export default function ItineraryDetailPage() {
                     )}
                   </div>
                 </ResizablePanel>
-                {(isTimelineOpen || isMapOpen) && <ResizableHandle withHandle />}
-              </>
             )}
+
+            {/* Handle before Timeline */}
+            {isTimelineOpen && isMembersOpen && <ResizableHandle withHandle />}
 
             {/* Middle Column: Day Timeline */}
             {isTimelineOpen && (
-              <>
                 <ResizablePanel 
-                  defaultSize={isMapOpen ? 50 : 100} 
-                  minSize={30} 
+                  defaultSize={40} 
+                  minSize={25} 
                   className="flex flex-col bg-white h-full relative z-10"
                 >
                   {/* Custom Tab Navigation */}
                   <div className="h-10 flex w-full items-center justify-between border-b border-slate-200 px-3 shrink-0 bg-slate-50/80">
                     <div className="flex items-center overflow-x-auto hide-scrollbar gap-2">
-                      {itinerary.days.map((day, idx) => (
-                        <button
+                      {displayItinerary.days.map((day, idx) => (
+                        <a
                           key={day.id}
+                          href={`#day-${day.id}`}
                           onClick={() => setActiveTab(day.id)}
                           className={`pb-1 font-medium text-sm transition-colors relative whitespace-nowrap shrink-0 px-2 mt-1 ${
                             activeTab === day.id ? 'text-blue-600' : 'text-slate-500 hover:text-slate-800'
@@ -294,12 +324,31 @@ export default function ItineraryDetailPage() {
                           {activeTab === day.id && (
                             <span className="absolute -bottom-2 left-0 right-0 h-0.5 bg-blue-600 rounded-t-full" />
                           )}
-                        </button>
+                        </a>
                       ))}
                     </div>
                     
-                    {/* Actions: Add Day & Collapse */}
+                    {/* Actions: Save, Add Day & Collapse */}
                     <div className="flex items-center gap-2 shrink-0">
+                      {Object.keys(modifiedStops).length > 0 && (
+                        <div className="flex items-center gap-1 mr-2 border-r border-slate-200 pr-3 animate-in fade-in">
+                          <button
+                            onClick={handleDraftDiscard}
+                            className="text-xs font-semibold text-slate-500 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap"
+                          >
+                            Discard
+                          </button>
+                          <button
+                            onClick={handleDraftSave}
+                            disabled={isLoading}
+                            className="flex items-center text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap shadow-sm disabled:opacity-50"
+                          >
+                            <Save size={12} className="mr-1.5" />
+                            {isLoading ? "Saving..." : "Save"}
+                          </button>
+                        </div>
+                      )}
+                      
                       <button
                         onClick={() => handleAddDay({ scheduledDate: null })}
                         className="text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 px-3 py-1.5 rounded-full transition-colors whitespace-nowrap"
@@ -312,57 +361,100 @@ export default function ItineraryDetailPage() {
                     </div>
                   </div>
 
-                  <div className="flex-1 w-full overflow-y-auto hide-scrollbar p-6 bg-slate-50/30">
+                  <div className="flex-1 w-full overflow-y-auto hide-scrollbar p-6 bg-slate-50/30 scroll-smooth">
                     <DragDropContext onDragEnd={onDragEnd}>
-                      {itinerary.days
-                        .filter((day) => day.id === activeTab)
-                        .map((day) => (
-                          <div key={day.id} className="animate-in fade-in slide-in-from-bottom-2 duration-300 w-full">
-                            <DayColumn
-                              day={day}
-                              onRemoveDay={handleRemoveDay}
-                              onAddStop={handleAddStop}
-                              onUpdateStop={handleUpdateStop}
-                              onRemoveStop={handleRemoveStop}
-                              isAddStopOpen={addStopDayId === day.id}
-                              onToggleAddStop={() =>
-                                setAddStopDayId(addStopDayId === day.id ? null : day.id)
-                              }
-                            />
+                      <Droppable droppableId="board" type="DAY" direction="vertical">
+                        {(provided) => (
+                          <div className="space-y-8 pb-20" ref={provided.innerRef} {...provided.droppableProps}>
+                            {displayItinerary.days.map((day, index) => (
+                              <Draggable key={day.id} draggableId={day.id} index={index}>
+                                {(dragProvided) => (
+                                  <div 
+                                    id={`day-${day.id}`}
+                                    ref={dragProvided.innerRef}
+                                    {...dragProvided.draggableProps}
+                                    className="animate-in fade-in slide-in-from-bottom-2 duration-300 w-full"
+                                  >
+                                    <DayColumn
+                                      day={day}
+                                      modifiedStops={modifiedStops}
+                                      onRemoveDay={handleRemoveDay}
+                                      onAddStop={(dayId, payload) => isDraftMode ? dispatchDraftActions([{ action: 'add', day_number: day.dayNumber, ...payload }]) : handleAddStop(dayId, payload)}
+                                      onUpdateStop={(stopId, payload) => isDraftMode ? dispatchDraftActions([{ action: 'update', id: stopId, day_number: day.dayNumber, ...payload }]) : handleUpdateStop(stopId, payload)}
+                                      onRemoveStop={(stopId) => isDraftMode ? dispatchDraftActions([{ action: 'remove', id: stopId, day_number: day.dayNumber }]) : handleRemoveStop(stopId)}
+                                      isDraftMode={isDraftMode}
+                                      onRestoreDay={(dayId) => dispatchDraftActions([{ action: 'restore_day', id: dayId, day_number: day.dayNumber }])}
+                                      onRestoreStop={(stopId) => dispatchDraftActions([{ action: 'restore_stop', id: stopId, day_number: day.dayNumber }])}
+                                      onHardRemoveStop={(stopId) => dispatchDraftActions([{ action: 'hard_remove', id: stopId, day_number: day.dayNumber }])}
+                                      isAddStopOpen={addStopDayId === day.id}
+                                      onToggleAddStop={() =>
+                                        setAddStopDayId(addStopDayId === day.id ? null : day.id)
+                                      }
+                                      dragHandleProps={dragProvided.dragHandleProps}
+                                    />
+                                  </div>
+                                )}
+                              </Draggable>
+                            ))}
+                            {provided.placeholder}
                           </div>
-                        ))}
+                        )}
+                      </Droppable>
                     </DragDropContext>
                   </div>
                 </ResizablePanel>
-                {isMapOpen && <ResizableHandle withHandle />}
-              </>
             )}
+
+            {/* Handle before Map */}
+            {isMapOpen && (isMembersOpen || isTimelineOpen) && <ResizableHandle withHandle />}
 
             {/* Right Column: Sticky Map */}
             {isMapOpen && (
-              <ResizablePanel 
-                defaultSize={30} 
-                minSize={25} 
-                className="flex flex-col relative h-full bg-slate-100"
-              >
-                <div className="h-10 flex items-center justify-between px-3 border-b border-slate-200 bg-white shrink-0 z-10">
-                  <button onClick={() => togglePanel('map')} className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition-colors">
-                    <ChevronRight size={16} />
-                  </button>
-                  <div className="flex flex-1 items-center justify-end gap-1 ml-4">
-                    <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800">
-                      Map View
-                      <MapIcon size={12} />
+                <ResizablePanel 
+                  defaultSize={35} 
+                  minSize={20} 
+                  className="flex flex-col relative h-full bg-slate-100"
+                >
+                  <div className="h-10 flex items-center justify-between px-3 border-b border-slate-200 bg-white shrink-0 z-10">
+                    <button onClick={() => togglePanel('map')} className="text-slate-400 hover:text-slate-700 p-1 rounded hover:bg-slate-100 transition-colors">
+                      <ChevronRight size={16} />
+                    </button>
+                    <div className="flex flex-1 items-center justify-end gap-1 ml-4">
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-800">
+                        Map View
+                        <MapIcon size={12} />
+                      </div>
                     </div>
                   </div>
-                </div>
-                <div className="flex-1 relative overflow-y-auto bg-white">
-                  <TripMapVisualizer itinerary={itinerary} />
-                </div>
-              </ResizablePanel>
+                  <div className="flex-1 relative overflow-y-auto bg-white">
+                    <TripMapVisualizer itinerary={displayItinerary} />
+                  </div>
+                </ResizablePanel>
             )}
 
-            {!isMembersOpen && !isTimelineOpen && !isMapOpen && (
+            {/* Handle before Chat */}
+            {isChatOpen && (isMembersOpen || isTimelineOpen || isMapOpen) && <ResizableHandle withHandle />}
+
+            {/* Far Right Column: AI Chat Panel */}
+            {isChatOpen && (
+                <ResizablePanel
+                  defaultSize={25}
+                  minSize={20}
+                  className="h-full"
+                >
+                  <AIChatPanel 
+                    tripId={id!} 
+                    workspaceDraft={displayItinerary}
+                    modifiedStops={modifiedStops}
+                    isDraftMode={isDraftMode}
+                    onDraftReceived={(draftStops) => {
+                      dispatchDraftActions(draftStops);
+                    }}
+                  />
+                </ResizablePanel>
+            )}
+
+            {!isMembersOpen && !isTimelineOpen && !isMapOpen && !isChatOpen && (
               <div className="flex-1 h-full bg-slate-50 flex items-center justify-center">
                 <div className="text-center">
                   <MapIcon size={48} className="text-slate-300 mx-auto mb-4" />

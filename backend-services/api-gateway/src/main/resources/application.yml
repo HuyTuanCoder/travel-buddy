@@ -31,11 +31,17 @@ spring:
               uri: http://notification-service:8006
               predicates:
                 - Path=/notifications/**
+            - id: ai-agent-service
+              uri: http://ai-agent-fastapi:8007
+              predicates:
+                - Path=/ai/**
 
 server:
   port: 8000
 
 jwt:
-  secret: ${JWT_SECRET}logging
+  secret: ${JWT_SECRET}
+
+logging:
   pattern:
     console: '%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - [%X{correlationId}] - %msg%n'

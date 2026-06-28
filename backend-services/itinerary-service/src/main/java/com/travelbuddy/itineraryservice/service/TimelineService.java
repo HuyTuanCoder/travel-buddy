@@ -184,6 +184,72 @@ public class TimelineService {
     log.info("[removeStop] <<< Output: stop {} deleted", stopId);
   }
 
+  // ==================== PUT /itineraries/stops/{stopId}/move ====================
+
+  @Transactional
+  public TripStopResponse moveStop(UUID stopId, MoveStopRequest request, String userId) {
+    log.info("[moveStop] >>> Input: stopId={}, targetDayId={}, userId={}", stopId, request.getTargetDayId(), userId);
+
+    TripStop oldStop = stopRepository.findById(stopId)
+        .orElseThrow(() -> new ItineraryNotFoundException("Stop not found: " + stopId));
+
+    ItineraryDay targetDay = dayRepository.findById(request.getTargetDayId())
+        .orElseThrow(() -> new ItineraryNotFoundException("Target Day not found: " + request.getTargetDayId()));
+
+    UUID itineraryId = oldStop.getItineraryDay().getItinerary().getId();
+    UUID targetItineraryId = targetDay.getItinerary().getId();
+
+    if (!itineraryId.equals(targetItineraryId)) {
+        throw new InvalidRequestException("Cannot move stops between different itineraries");
+    }
+    
+    accessGuard.verifyEditPermission(itineraryId, userId);
+
+    // Calculate visit order for new day
+    int nextVisitOrder = stopRepository.findMaxVisitOrderByDayId(request.getTargetDayId())
+        .map(max -> max + 1)
+        .orElse(1);
+        
+    int finalVisitOrder = request.getTargetVisitOrder() != null ? request.getTargetVisitOrder() : nextVisitOrder;
+
+    // Create a new stop instance because itineraryDay is not updatable
+    TripStop newStop = new TripStop();
+    newStop.setItineraryDay(targetDay);
+    newStop.setGooglePlaceId(oldStop.getGooglePlaceId());
+    newStop.setStopType(oldStop.getStopType());
+    newStop.setVisitOrder(finalVisitOrder);
+    newStop.setArrivalTime(oldStop.getArrivalTime());
+    newStop.setDepartureTime(oldStop.getDepartureTime());
+    newStop.setEstimatedCost(oldStop.getEstimatedCost());
+    newStop.setUserNotes(oldStop.getUserNotes());
+
+    // Save the new stop and delete the old one transactionally
+    TripStop savedStop = stopRepository.save(newStop);
+    stopRepository.delete(oldStop);
+    
+    // Optional: If targetVisitOrder was provided, we may need to shift existing stops down.
+    // For now, since the AI handles ordering cleanly, we can just save it. 
+    // Wait, let's just do a simple shift if needed. 
+    if (request.getTargetVisitOrder() != null) {
+        List<TripStop> otherStops = stopRepository.findByItineraryDayIdOrderByVisitOrderAsc(targetDay.getId());
+        int currentOrder = 0;
+        for (TripStop other : otherStops) {
+            if (!other.getId().equals(savedStop.getId())) {
+                if (currentOrder == finalVisitOrder) currentOrder++;
+                other.setVisitOrder(currentOrder++);
+                stopRepository.save(other);
+            }
+        }
+    }
+
+    Map<String, PlaceInfo> locationMap = savedStop.getGooglePlaceId() != null ? 
+        locationGrpcClient.fetchPlaces(List.of(savedStop.getGooglePlaceId())) : Collections.emptyMap();
+    TripStopResponse response = mapper.toStopResponse(savedStop, locationMap);
+
+    log.info("[moveStop] <<< Output: {}", response);
+    return response;
+  }
+
   // ==================== PUT /itineraries/days/{dayId}/stops/reorder ====================
 
   @Transactional
@@ -239,5 +305,30 @@ public class TimelineService {
 
     log.info("[reorderStops] <<< Output: {} stops reordered", responses.size());
     return responses;
+  }
+
+  // ==================== PUT /itineraries/{id}/days/swap ====================
+
+  @Transactional
+  public void swapDays(UUID itineraryId, SwapDaysRequest request, String userId) {
+    log.info("[swapDays] >>> Input: itineraryId={}, dayA={}, dayB={}, userId={}", itineraryId, request.getDayA(), request.getDayB(), userId);
+
+    accessGuard.verifyEditPermission(itineraryId, userId);
+
+    List<ItineraryDay> days = dayRepository.findByItineraryIdOrderByDayNumberAsc(itineraryId);
+    
+    ItineraryDay day1 = days.stream().filter(d -> d.getDayNumber().equals(request.getDayA())).findFirst()
+        .orElseThrow(() -> new InvalidRequestException("Day number not found: " + request.getDayA()));
+        
+    ItineraryDay day2 = days.stream().filter(d -> d.getDayNumber().equals(request.getDayB())).findFirst()
+        .orElseThrow(() -> new InvalidRequestException("Day number not found: " + request.getDayB()));
+
+    Integer temp = day1.getDayNumber();
+    day1.setDayNumber(day2.getDayNumber());
+    day2.setDayNumber(temp);
+
+    dayRepository.saveAll(List.of(day1, day2));
+    
+    log.info("[swapDays] <<< Output: day {} and day {} swapped", request.getDayA(), request.getDayB());
   }
 }

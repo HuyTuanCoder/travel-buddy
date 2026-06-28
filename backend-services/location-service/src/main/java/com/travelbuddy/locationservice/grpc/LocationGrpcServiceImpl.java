@@ -2,6 +2,8 @@ package com.travelbuddy.locationservice.grpc;
 
 import com.travelbuddy.location.grpc.GetPlacesBatchRequest;
 import com.travelbuddy.location.grpc.GetPlacesBatchResponse;
+import com.travelbuddy.location.grpc.AddLocationRequest;
+import com.travelbuddy.location.grpc.AddLocationResponse;
 import com.travelbuddy.location.grpc.LocationGrpcServiceGrpc;
 import com.travelbuddy.location.grpc.PlaceInfo;
 import com.travelbuddy.locationservice.model.Place;
@@ -59,6 +61,41 @@ public class LocationGrpcServiceImpl extends LocationGrpcServiceGrpc.LocationGrp
 
     } catch (Exception e) {
       log.error("[gRPC Server] Error processing batch request", e);
+      responseObserver.onError(io.grpc.Status.INTERNAL
+          .withDescription(e.getMessage())
+          .withCause(e)
+          .asRuntimeException());
+    }
+  }
+
+  @Override
+  public void addLocation(AddLocationRequest request, StreamObserver<AddLocationResponse> responseObserver) {
+    String placeId = request.getGooglePlaceId();
+    log.info("[gRPC Server] Received addLocation request for placeId: {}", placeId);
+
+    try {
+      Place place = placeService.addPlace(placeId);
+      
+      PlaceInfo info = PlaceInfo.newBuilder()
+          .setGooglePlaceId(place.getGooglePlaceId())
+          .setName(place.getName())
+          .setFormattedAddress(place.getFormattedAddress() != null ? place.getFormattedAddress() : "")
+          .setLatitude(place.getLatitude())
+          .setLongitude(place.getLongitude())
+          .setPhotoReference(place.getPhotoReference() != null ? place.getPhotoReference() : "")
+          .setPlaceTypes(place.getPlaceTypes() != null ? place.getPlaceTypes() : "")
+          .build();
+          
+      AddLocationResponse response = AddLocationResponse.newBuilder()
+          .setPlace(info)
+          .build();
+          
+      responseObserver.onNext(response);
+      responseObserver.onCompleted();
+      
+      log.info("[gRPC Server] Successfully registered place {}", placeId);
+    } catch (Exception e) {
+      log.error("[gRPC Server] Error processing addLocation request", e);
       responseObserver.onError(io.grpc.Status.INTERNAL
           .withDescription(e.getMessage())
           .withCause(e)
