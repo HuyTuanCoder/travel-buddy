@@ -53,6 +53,9 @@ async def plan_itinerary(state: AgentState, config: RunnableConfig):
     You are the Master Itinerary Planner. 
     Your job is to read the user's request, the known constraints, and the CURRENT ITINERARY DRAFT, and generate a strict, linear checklist of actions for an executor agent to follow.
     
+    IMPORTANT STATE RULES:
+    1. If you see an item in the draft with `"is_draft_deleted": true`, it means it was softly removed (ghosted). Do NOT recreate it from scratch if the user asks for it back. Use the RESTORE tools.
+    
     Known Constraints & Memories:
     {rag_context}
     
@@ -80,12 +83,12 @@ async def plan_itinerary(state: AgentState, config: RunnableConfig):
 
        - PHASE 2: Collaborative Gathering Loop (The "Where" & "When")
          Condition: Basic constraints are known, but you do NOT yet have a comprehensive list of CONFIRMED points of interest (POIs), timing preferences, and pacing details for the entire trip.
-         Action: Output a plan to `search_web` for POIs that match the vibe, present curated options (Option A vs Option B), and actively ask logistical questions (e.g., "Would you prefer this in the morning?", "What time do you usually start your day?", "Do you want a packed schedule?").
+         Action: Output a plan to use `search_web` (encourage using it IN PARALLEL for different categories like restaurants vs activities if applicable) to find POIs that match the vibe, present curated options (Option A vs Option B), and actively ask logistical questions (e.g., "Would you prefer this in the morning?", "What time do you usually start your day?", "Do you want a packed schedule?").
          Rule: You MUST stay in this phase across multiple turns to build a massive repository of confirmed preferences in the chat history. YOU ARE BANNED FROM DRAFTING. Only when you have gathered enough details to confidently fill a substantial portion of the trip, you may end your plan by instructing the agent to ask: "Are you ready for me to draft this into a schedule?"
 
        - PHASE 3: Itinerary Design (The Draft)
          Condition: The user has explicitly consented to drafting (e.g., "Yes, make the draft now") AFTER the Phase 2 gathering loop is complete.
-         Action: Output a plan to officially lock in the confirmed POIs using `find_and_register_place`, create the skeleton using `draft_add_day`, and schedule everything using `draft_add_stop` according to their preferred pacing and timing.
+         Action: Output a plan to officially lock in the confirmed POIs using `find_and_register_place` (encourage IN PARALLEL if multiple places), create the skeleton using `draft_add_day`, and schedule everything using `draft_add_stop` (encourage IN PARALLEL if scheduling multiple stops) according to their preferred pacing and timing.
 
        - PHASE 4: Refinement (Post-Draft)
          Condition: A draft exists, and the user is asking for tweaks.
@@ -95,10 +98,12 @@ async def plan_itinerary(state: AgentState, config: RunnableConfig):
     
     4. LONG-TERM MEMORY (AGENTIC RAG): If the user refers to past conversations, past preferences, or says things like 'remember what I told you', you MUST instruct the agent to use the `search_past_conversations` tool.
     
+    5. PARALLEL TOOL EXECUTION: Actively encourage the Agent to execute tools in parallel whenever possible to reduce latency. If you are registering multiple distinct places, explicitly instruct the Agent to call `find_and_register_place` IN PARALLEL. If you are scheduling multiple stops for a day, tell it to call `draft_add_stop` IN PARALLEL.
+    
     Do NOT execute the actions. Just write the checklist.
     Example Phase 1: ["Push back and ask user for trip duration, budget, and the vibe they are looking for"]
     Example Phase 2: ["Search web for trendy Sushi restaurants", "Present top 2 sushi options to the user and ask if they prefer an early or late dinner reservation"]
-    Example Phase 3: ["Register the confirmed sushi restaurant with find_and_register_place", "Append it to Day 1 evening slot using draft_add_stop"]
+    Example Phase 3: ["Register the 3 confirmed POIs (The Louvre, Eiffel Tower, and the sushi restaurant) IN PARALLEL with find_and_register_place", "Append them to Day 1 IN PARALLEL using draft_add_stop ensuring chronological order (Morning -> Afternoon -> Evening)"]
     """
     
     logger.info("Planner Node: Generating CoT checklist...")

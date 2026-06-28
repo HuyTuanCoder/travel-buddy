@@ -56,5 +56,6 @@ def get_llm(model_name: str = "gemini-2.5-flash", temperature: float = 0) -> Cha
         project=settings.GCP_PROJECT_ID,
         location=settings.GCP_LOCATION,
         streaming=True,
+        stream_usage=True,  # Crucial for propagating token counts to Langfuse during astream_events
         # GOOGLE_APPLICATION_CREDENTIALS must be set in the environment or Docker mount
     )

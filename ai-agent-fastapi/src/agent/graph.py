@@ -17,7 +17,10 @@ from src.agent.nodes.router import semantic_router
 from src.agent.nodes.early_exit import early_exit_node
 
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
-from src.agent.tools.draft import draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, draft_add_day, draft_remove_day
+from src.agent.tools.draft import (
+    draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, 
+    draft_add_day, draft_remove_day, draft_restore_day, draft_restore_stop, draft_swap_days
+)
 from src.workers.memory_tasks import process_evicted_memory
 from src.core.telemetry import publish_thought
 from langchain_core.runnables import RunnableConfig
@@ -163,7 +166,8 @@ def build_graph(checkpointer: AsyncPostgresSaver = None):
     builder.add_node("speaker", call_speaker)
     builder.add_node("auto_tools", ToolNode([
         search_web, read_webpage, find_and_register_place,
-        draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, draft_add_day, draft_remove_day
+        draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, 
+        draft_add_day, draft_remove_day, draft_restore_day, draft_restore_stop, draft_swap_days
     ]))
     builder.add_node("validator", validate_tool_call)
     builder.add_node("critic", evaluate_itinerary)

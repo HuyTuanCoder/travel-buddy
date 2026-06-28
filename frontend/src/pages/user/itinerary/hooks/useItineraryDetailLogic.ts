@@ -1,8 +1,8 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getItineraryDetail, updateItinerary, deleteItinerary, batchUpdateItinerary } from '@/services/itinerary/itineraryService'
 import { getMembers, inviteMember, removeMember, updateMemberRole, transferOwnership } from '@/services/itinerary/memberService'
-import { addDay, removeDay, addStop, updateStop, removeStop, reorderStops, moveStop } from '@/services/itinerary/timelineService'
+import { addDay, removeDay, addStop, updateStop, removeStop, reorderStops, moveStop, swapDays } from '@/services/itinerary/timelineService'
 import type {
   ItineraryDetailResponse,
   MemberListResponse,
@@ -10,7 +10,6 @@ import type {
   AddDayRequest,
   AddStopRequest,
   UpdateStopRequest,
-  ReorderStopsRequest,
   InviteRequest,
   MemberRole,
 } from '@/types/itineraryTypes'
@@ -202,30 +201,101 @@ export function useItineraryDetailLogic(itineraryId: string) {
     }
   }
 
-  // Reorder stops within a day (drag-and-drop)
-  const handleReorderStops = async (dayId: string, payload: ReorderStopsRequest) => {
-    try {
-      await reorderStops(dayId, payload)
-      await fetchDetail()
-    } catch (err: any) {
-      setState((prev) => ({
-        ...prev,
-        error: err?.message ?? 'Failed to reorder stops.',
-      }))
-    }
+  // Unified Optimistic Drag and Drop (Handles Reorder and Move across Days for both modes)
+  const apiDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleOptimisticDragDrop = (
+    stopId: string,
+    sourceDayId: string,
+    destDayId: string,
+    sourceIndex: number,
+    destIndex: number
+  ) => {
+    let reorderedStopIds: string[] = [];
+
+    // 1. Silent Acceptance: Instantly mutate the correct state (Draft or Normal)
+    setState((prev) => {
+      const targetItinerary = prev.isDraftMode ? prev.draftItinerary : prev.itinerary;
+      if (!targetItinerary) return prev;
+      
+      const newItin = JSON.parse(JSON.stringify(targetItinerary));
+      const sDay = newItin.days.find((d: any) => d.id === sourceDayId);
+      const dDay = newItin.days.find((d: any) => d.id === destDayId);
+      if (!sDay || !dDay) return prev;
+
+      const [movedStop] = sDay.stops.splice(sourceIndex, 1);
+      dDay.stops.splice(destIndex, 0, movedStop);
+      
+      if (sourceDayId === destDayId) {
+        reorderedStopIds = sDay.stops.map((s: any) => s.id);
+      }
+
+      const newModifiedStops = { ...prev.modifiedStops };
+      if (prev.isDraftMode) {
+        if (!newModifiedStops[movedStop.id]) newModifiedStops[movedStop.id] = {};
+        newModifiedStops[movedStop.id].isUserModified = true;
+      }
+
+      return prev.isDraftMode 
+        ? { ...prev, draftItinerary: newItin, modifiedStops: newModifiedStops }
+        : { ...prev, itinerary: newItin, draftItinerary: newItin }; // Sync draft in normal mode
+    });
+
+    // 2. If in Draft Mode, we do NOT hit the DB. We just let local state persist.
+    if (state.isDraftMode) return;
+
+    // 3. Normal Mode: Debounce the DB call to prevent race conditions on rapid dragging
+    if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
+    apiDebounceRef.current = setTimeout(async () => {
+      try {
+        if (sourceDayId === destDayId) {
+          if (reorderedStopIds.length > 0) {
+            await reorderStops(sourceDayId, { stopIds: reorderedStopIds });
+          }
+        } else {
+          // Cross-day move
+          await moveStop(stopId, { targetDayId: destDayId, targetVisitOrder: destIndex + 1 });
+        }
+        // Do NOT fetchDetail() here to avoid breaking the user's flow. Silent success!
+      } catch (err: any) {
+        console.error('Optimistic drag drop failed, reverting state.', err);
+        fetchDetail(); // Revert to source of truth on error
+      }
+    }, 500);
   }
 
-  // Move a stop to a different day
-  const handleMoveStop = async (stopId: string, targetDayId: string, targetVisitOrder?: number) => {
-    try {
-      await moveStop(stopId, { targetDayId, targetVisitOrder })
-      await fetchDetail()
-    } catch (err: any) {
-      setState((prev) => ({
-        ...prev,
-        error: err?.message ?? 'Failed to move stop.',
-      }))
-    }
+  // Swap Days (Optimistic)
+  const handleSwapDays = (dayA: number, dayB: number) => {
+    setState((prev) => {
+      const targetItinerary = prev.isDraftMode ? prev.draftItinerary : prev.itinerary;
+      if (!targetItinerary) return prev;
+      
+      const newItin = JSON.parse(JSON.stringify(targetItinerary));
+      const dayAIndex = newItin.days.findIndex((d: any) => d.dayNumber === dayA);
+      const dayBIndex = newItin.days.findIndex((d: any) => d.dayNumber === dayB);
+      if (dayAIndex !== -1 && dayBIndex !== -1) {
+        const temp = newItin.days[dayAIndex].dayNumber;
+        newItin.days[dayAIndex].dayNumber = newItin.days[dayBIndex].dayNumber;
+        newItin.days[dayBIndex].dayNumber = temp;
+      }
+      newItin.days.sort((a: any, b: any) => a.dayNumber - b.dayNumber);
+
+      return prev.isDraftMode 
+        ? { ...prev, draftItinerary: newItin }
+        : { ...prev, itinerary: newItin, draftItinerary: newItin };
+    });
+
+    if (state.isDraftMode) return;
+
+    if (apiDebounceRef.current) clearTimeout(apiDebounceRef.current);
+    apiDebounceRef.current = setTimeout(async () => {
+      try {
+        await swapDays(itineraryId, { dayA, dayB });
+      } catch (err: any) {
+        console.error('Swap days failed, reverting state.', err);
+        fetchDetail();
+      }
+    }, 500);
   }
 
   // ==================== Draft / Co-Drafting Actions ====================
@@ -260,60 +330,121 @@ export function useItineraryDetailLogic(itineraryId: string) {
     })
   }
 
-  // Local Reorder (Drag and Drop)
-  const handleDraftReorderStops = (dayId: string, sourceIndex: number, destIndex: number) => {
+
+
+  // Unified React Draft Dispatcher
+  const dispatchDraftActions = useCallback((actions: any[]) => {
     setState((prev) => {
-      if (!prev.draftItinerary) return prev
-      const newDraft = JSON.parse(JSON.stringify(prev.draftItinerary))
-      const day = newDraft.days.find((d: any) => d.id === dayId)
-      if (!day) return prev
+      if (!prev.draftItinerary) return prev;
+      const newDraft = JSON.parse(JSON.stringify(prev.draftItinerary));
+      const newModifiedStops = { ...prev.modifiedStops };
 
-      const [movedStop] = day.stops.splice(sourceIndex, 1)
-      day.stops.splice(destIndex, 0, movedStop)
-
-      // Mark the moved stop as user modified
-      const newModifiedStops = { ...prev.modifiedStops }
-      if (!newModifiedStops[movedStop.id]) newModifiedStops[movedStop.id] = {}
-      newModifiedStops[movedStop.id].isUserModified = true
-
-      return { ...prev, isDraftMode: true, draftItinerary: newDraft, modifiedStops: newModifiedStops }
-    })
-  }
-
-  // Local Add Stop
-  const handleDraftAddStop = (dayId: string, stop: any, source: 'AI' | 'USER') => {
-    const tempId = stop.id || `temp-${Date.now()}`
-    const stopWithId = { ...stop, id: tempId }
-    handleDraftUpdate((draft) => {
-      const day = draft.days.find(d => d.id === dayId)
-      if (day) day.stops.push(stopWithId)
-    }, [tempId], source)
-  }
-
-  // Local Update Stop
-  const handleDraftUpdateStop = (stopId: string, payload: any, source: 'AI' | 'USER') => {
-    handleDraftUpdate((draft) => {
-      for (const day of draft.days) {
-        const idx = day.stops.findIndex(s => s.id === stopId)
-        if (idx !== -1) {
-          day.stops[idx] = { ...day.stops[idx], ...payload }
-          break
+      for (const action of actions) {
+        const type = action.action;
+        
+        if (type === 'add') {
+          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number);
+          if (targetDay) {
+            const tempId = action.id || `ai-temp-${crypto.randomUUID()}`;
+            targetDay.stops.push({
+              id: tempId,
+              googlePlaceId: action.google_place_id,
+              locationName: action.name || action.place_name || '',
+              stopType: action.stop_type || 'ATTRACTION',
+              userNotes: action.user_notes || '',
+              arrivalTime: action.arrival_time || null,
+              departureTime: action.departure_time || null,
+              estimatedCost: action.estimated_cost ? parseFloat(action.estimated_cost) : null,
+              isDraftDeleted: false
+            });
+            if (!newModifiedStops[tempId]) newModifiedStops[tempId] = {};
+            newModifiedStops[tempId].isAiModified = true;
+          }
+        }
+        else if (type === 'remove') {
+          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number);
+          if (targetDay) {
+            const targetStop = targetDay.stops.find((s: any) => s.googlePlaceId === action.google_place_id || s.id === action.id);
+            if (targetStop) {
+              targetStop.isDraftDeleted = true; // Tombstone!
+              if (!newModifiedStops[targetStop.id]) newModifiedStops[targetStop.id] = {};
+              newModifiedStops[targetStop.id].isAiModified = true;
+            }
+          }
+        }
+        else if (type === 'update') {
+          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number);
+          if (targetDay) {
+            const targetStop = targetDay.stops.find((s: any) => s.googlePlaceId === action.google_place_id || s.id === action.id);
+            if (targetStop) {
+              if (action.user_notes !== undefined) targetStop.userNotes = action.user_notes;
+              if (action.arrival_time !== undefined) targetStop.arrivalTime = action.arrival_time;
+              if (action.departure_time !== undefined) targetStop.departureTime = action.departure_time;
+              if (!newModifiedStops[targetStop.id]) newModifiedStops[targetStop.id] = {};
+              newModifiedStops[targetStop.id].isAiModified = true;
+            }
+          }
+        }
+        else if (type === 'move') {
+          const oldDay = newDraft.days.find((d: any) => d.dayNumber === action.old_day_number);
+          const newDay = newDraft.days.find((d: any) => d.dayNumber === action.new_day_number);
+          if (oldDay && newDay) {
+            const targetIndex = oldDay.stops.findIndex((s: any) => s.googlePlaceId === action.google_place_id || s.id === action.id);
+            if (targetIndex !== -1) {
+              const [movedStop] = oldDay.stops.splice(targetIndex, 1);
+              if (action.new_visit_order !== undefined && action.new_visit_order !== null) {
+                newDay.stops.splice(action.new_visit_order, 0, movedStop);
+              } else {
+                newDay.stops.push(movedStop); // Append sequentially!
+              }
+              if (!newModifiedStops[movedStop.id]) newModifiedStops[movedStop.id] = {};
+              newModifiedStops[movedStop.id].isAiModified = true;
+            }
+          }
+        }
+        else if (type === 'add_day') {
+           const nextDay = newDraft.days.length + 1;
+           newDraft.days.push({
+             id: `ai-temp-day-${crypto.randomUUID()}`,
+             itineraryId,
+             dayNumber: nextDay,
+             scheduledDate: action.scheduled_date || null,
+             stops: [],
+             isDraftDeleted: false
+           });
+        }
+        else if (type === 'remove_day') {
+          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number || d.id === action.id);
+          if (targetDay) targetDay.isDraftDeleted = true; // Tombstone
+        }
+        else if (type === 'restore_day') {
+          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number || d.id === action.id);
+          if (targetDay) targetDay.isDraftDeleted = false; // Restore
+        }
+        else if (type === 'restore_stop') {
+          const targetDay = newDraft.days.find((d: any) => d.dayNumber === action.day_number || d.id === action.day_id);
+          if (targetDay) {
+            const targetStop = targetDay.stops.find((s: any) => s.googlePlaceId === action.google_place_id || s.id === action.id);
+            if (targetStop) targetStop.isDraftDeleted = false; // Restore
+          }
+        }
+        else if (type === 'swap_days') {
+          const dayAIndex = newDraft.days.findIndex((d: any) => d.dayNumber === action.day_a);
+          const dayBIndex = newDraft.days.findIndex((d: any) => d.dayNumber === action.day_b);
+          if (dayAIndex !== -1 && dayBIndex !== -1) {
+            const temp = newDraft.days[dayAIndex].dayNumber;
+            newDraft.days[dayAIndex].dayNumber = newDraft.days[dayBIndex].dayNumber;
+            newDraft.days[dayBIndex].dayNumber = temp;
+          }
         }
       }
-    }, [stopId], source)
-  }
 
-  // Local Remove Stop
-  const handleDraftRemoveStop = (stopId: string) => {
-    setState((prev) => {
-      if (!prev.draftItinerary) return prev
-      const newDraft = JSON.parse(JSON.stringify(prev.draftItinerary))
-      for (const day of newDraft.days) {
-        day.stops = day.stops.filter((s: any) => s.id !== stopId)
-      }
-      return { ...prev, isDraftMode: true, draftItinerary: newDraft }
-    })
-  }
+      // Sort days by dayNumber so UI reflects swaps properly
+      newDraft.days.sort((a: any, b: any) => a.dayNumber - b.dayNumber);
+
+      return { ...prev, isDraftMode: true, draftItinerary: newDraft, modifiedStops: newModifiedStops };
+    });
+  }, [itineraryId]);
 
   // Discard all local drafts and revert to pristine DB state
   const handleDraftDiscard = () => {
@@ -331,21 +462,30 @@ export function useItineraryDetailLogic(itineraryId: string) {
 
     setState((prev) => ({ ...prev, isLoading: true, error: null }))
     try {
+      // 1. Strip Ghosts
+      const validDays = state.draftItinerary.days.filter((d: any) => !d.isDraftDeleted);
+
+      // 2. Re-Index Days and Stops
       const payload = {
-        days: state.draftItinerary.days.map((day) => ({
-          dayId: day.id,
-          stops: day.stops.map((stop: any) => ({
-            id: stop.id,
-            googlePlaceId: stop.googlePlaceId,
-            locationName: stop.locationName,
-            address: stop.address,
-            stopType: stop.stopType,
-            userNotes: stop.userNotes,
-            arrivalTime: stop.arrivalTime,
-            departureTime: stop.departureTime,
-            estimatedCost: stop.estimatedCost,
-          })),
-        })),
+        days: validDays.map((day: any, dayIndex: number) => {
+          const validStops = day.stops.filter((s: any) => !s.isDraftDeleted);
+          return {
+            dayId: day.id,
+            dayNumber: dayIndex + 1, // Force sequence!
+            stops: validStops.map((stop: any, stopIndex: number) => ({
+              id: stop.id,
+              visitOrder: stopIndex + 1, // Force sequence!
+              googlePlaceId: stop.googlePlaceId,
+              locationName: stop.locationName,
+              address: stop.address,
+              stopType: stop.stopType,
+              userNotes: stop.userNotes,
+              arrivalTime: stop.arrivalTime,
+              departureTime: stop.departureTime,
+              estimatedCost: stop.estimatedCost,
+            })),
+          };
+        }),
       }
 
       const updatedDetail = await batchUpdateItinerary(itineraryId, payload)
@@ -451,15 +591,12 @@ export function useItineraryDetailLogic(itineraryId: string) {
     handleAddStop,
     handleUpdateStop,
     handleRemoveStop,
-    handleReorderStops,
-    handleMoveStop,
+    handleOptimisticDragDrop,
+    handleSwapDays,
 
     // Draft Actions (UI Overlay)
-    handleDraftReorderStops,
     toggleDraftMode,
-    handleDraftAddStop,
-    handleDraftUpdateStop,
-    handleDraftRemoveStop,
+    dispatchDraftActions,
     handleDraftDiscard,
     handleDraftSave,
     handleDraftUpdate,

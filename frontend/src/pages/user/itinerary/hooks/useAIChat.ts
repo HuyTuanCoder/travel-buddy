@@ -12,6 +12,10 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
   const [isThinking, setIsThinking] = useState<boolean>(false);
 
   const eventSourceRef = useRef<EventSource | null>(null);
+  
+  // Debounce queue for draft updates
+  const draftQueue = useRef<any[]>([]);
+  const draftFrameRef = useRef<number | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -85,10 +89,18 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
           case 'draft_update':
             try {
               let draftData = JSON.parse(data.content);
-              // Ensure draftData is an array to fix the .forEach crash
-              if (!Array.isArray(draftData)) draftData = [draftData];
               if (options?.onDraftReceived) {
-                options.onDraftReceived(draftData);
+                draftQueue.current.push(draftData);
+                if (!draftFrameRef.current) {
+                  draftFrameRef.current = requestAnimationFrame(() => {
+                    // Flush the entire queue to the unified reducer at once
+                    if (options.onDraftReceived) {
+                      options.onDraftReceived([...draftQueue.current]);
+                    }
+                    draftQueue.current = [];
+                    draftFrameRef.current = null;
+                  });
+                }
               }
             } catch (e) {
               console.error("Failed to parse draft_update", e);
@@ -149,6 +161,9 @@ export const useAIChat = (tripId: string, options?: UseAIChatOptions) => {
     return () => {
       if (eventSourceRef.current) {
         eventSourceRef.current.close();
+      }
+      if (draftFrameRef.current) {
+        cancelAnimationFrame(draftFrameRef.current);
       }
     };
   }, [connectStream]);

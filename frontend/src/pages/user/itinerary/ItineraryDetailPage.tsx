@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import { Users, Map as MapIcon, ChevronLeft, ChevronRight, Calendar, MessageSquare, Save } from 'lucide-react'
 import { APIProvider } from '@vis.gl/react-google-maps'
-import { DragDropContext } from '@hello-pangea/dnd'
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd'
 import type { DropResult } from '@hello-pangea/dnd'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -48,10 +48,12 @@ export default function ItineraryDetailPage() {
     handleRemoveDay,
     addStopDayId,
     setAddStopDayId,
-    handleDraftReorderStops,
-    handleDraftAddStop,
-    handleDraftUpdateStop,
-    handleDraftRemoveStop,
+    handleAddStop,
+    handleUpdateStop,
+    handleRemoveStop,
+    handleOptimisticDragDrop,
+    handleSwapDays,
+    dispatchDraftActions,
     handleDraftDiscard,
     handleDraftSave,
     handleInvite,
@@ -81,7 +83,7 @@ export default function ItineraryDetailPage() {
   }, [itinerary?.days, activeTab])
 
   const onDragEnd = (result: DropResult) => {
-    const { source, destination } = result
+    const { source, destination, draggableId, type } = result
     if (!destination) return
 
     if (
@@ -91,13 +93,27 @@ export default function ItineraryDetailPage() {
       return
     }
 
-    if (source.droppableId !== destination.droppableId) {
-      alert('Moving stops between days is not yet supported.')
-      return
+    if (type === 'DAY') {
+      const sourceDay = displayItinerary?.days[source.index];
+      const destDay = displayItinerary?.days[destination.index];
+      if (sourceDay && destDay) {
+        if (isDraftMode) {
+          dispatchDraftActions([{ action: 'swap_days', day_a: sourceDay.dayNumber, day_b: destDay.dayNumber }]);
+        } else {
+          handleSwapDays(sourceDay.dayNumber, destDay.dayNumber);
+        }
+      }
+      return;
     }
 
-    // Use the draft reorder instead of the immediate API call
-    handleDraftReorderStops(source.droppableId, source.index, destination.index)
+    // Pass the exact action to our unified handler
+    handleOptimisticDragDrop(
+      draggableId, 
+      source.droppableId, 
+      destination.droppableId, 
+      source.index, 
+      destination.index
+    );
   }
 
   const displayItinerary = draftItinerary || itinerary
@@ -347,28 +363,42 @@ export default function ItineraryDetailPage() {
 
                   <div className="flex-1 w-full overflow-y-auto hide-scrollbar p-6 bg-slate-50/30 scroll-smooth">
                     <DragDropContext onDragEnd={onDragEnd}>
-                      <div className="space-y-8 pb-20">
-                        {displayItinerary.days.map((day) => (
-                          <div 
-                            key={day.id} 
-                            id={`day-${day.id}`}
-                            className="animate-in fade-in slide-in-from-bottom-2 duration-300 w-full"
-                          >
-                            <DayColumn
-                              day={day}
-                              modifiedStops={modifiedStops}
-                              onRemoveDay={handleRemoveDay}
-                              onAddStop={(dayId, payload) => handleDraftAddStop(dayId, payload, 'USER')}
-                              onUpdateStop={(stopId, payload) => handleDraftUpdateStop(stopId, payload, 'USER')}
-                              onRemoveStop={(stopId) => handleDraftRemoveStop(stopId)}
-                              isAddStopOpen={addStopDayId === day.id}
-                              onToggleAddStop={() =>
-                                setAddStopDayId(addStopDayId === day.id ? null : day.id)
-                              }
-                            />
+                      <Droppable droppableId="board" type="DAY" direction="vertical">
+                        {(provided) => (
+                          <div className="space-y-8 pb-20" ref={provided.innerRef} {...provided.droppableProps}>
+                            {displayItinerary.days.map((day, index) => (
+                              <Draggable key={day.id} draggableId={day.id} index={index}>
+                                {(dragProvided) => (
+                                  <div 
+                                    id={`day-${day.id}`}
+                                    ref={dragProvided.innerRef}
+                                    {...dragProvided.draggableProps}
+                                    className="animate-in fade-in slide-in-from-bottom-2 duration-300 w-full"
+                                  >
+                                    <DayColumn
+                                      day={day}
+                                      modifiedStops={modifiedStops}
+                                      onRemoveDay={handleRemoveDay}
+                                      onAddStop={(dayId, payload) => isDraftMode ? dispatchDraftActions([{ action: 'add', day_number: day.dayNumber, ...payload }]) : handleAddStop(dayId, payload)}
+                                      onUpdateStop={(stopId, payload) => isDraftMode ? dispatchDraftActions([{ action: 'update', id: stopId, day_number: day.dayNumber, ...payload }]) : handleUpdateStop(stopId, payload)}
+                                      onRemoveStop={(stopId) => isDraftMode ? dispatchDraftActions([{ action: 'remove', id: stopId, day_number: day.dayNumber }]) : handleRemoveStop(stopId)}
+                                      isDraftMode={isDraftMode}
+                                      onRestoreDay={(dayId) => dispatchDraftActions([{ action: 'restore_day', id: dayId, day_number: day.dayNumber }])}
+                                      onRestoreStop={(stopId) => dispatchDraftActions([{ action: 'restore_stop', id: stopId, day_number: day.dayNumber }])}
+                                      isAddStopOpen={addStopDayId === day.id}
+                                      onToggleAddStop={() =>
+                                        setAddStopDayId(addStopDayId === day.id ? null : day.id)
+                                      }
+                                      dragHandleProps={dragProvided.dragHandleProps}
+                                    />
+                                  </div>
+                                )}
+                              </Draggable>
+                            ))}
+                            {provided.placeholder}
                           </div>
-                        ))}
-                      </div>
+                        )}
+                      </Droppable>
                     </DragDropContext>
                   </div>
                 </ResizablePanel>
@@ -417,57 +447,7 @@ export default function ItineraryDetailPage() {
                     modifiedStops={modifiedStops}
                     isDraftMode={isDraftMode}
                     onDraftReceived={(draftStops) => {
-                      // Handled array formatting in useAIChat.ts
-                      draftStops.forEach(stop => {
-                        const targetDay = displayItinerary?.days.find(d => d.dayNumber === stop.day_number || d.dayNumber === stop.old_day_number);
-                        const existingStop = displayItinerary?.days.flatMap(d => d.stops).find(s => s.googlePlaceId === stop.google_place_id);
-
-                        switch(stop.action) {
-                          case 'add':
-                            if (targetDay) {
-                              const mappedStop = {
-                                locationName: stop.name || stop.place_name || '',
-                                address: stop.address || '',
-                                stopType: stop.stop_type || 'ATTRACTION',
-                                userNotes: stop.user_notes || stop.description || '',
-                                googlePlaceId: stop.google_place_id,
-                                estimatedCost: stop.estimated_cost ? parseFloat(stop.estimated_cost) : null,
-                                arrivalTime: stop.arrival_time || null,
-                                departureTime: stop.departure_time || null,
-                              };
-                              handleDraftAddStop(targetDay.id, mappedStop, 'AI');
-                            }
-                            break;
-                          case 'remove':
-                            if (existingStop) {
-                              handleDraftRemoveStop(existingStop.id);
-                            }
-                            break;
-                          case 'update':
-                            if (existingStop) {
-                                const updatePayload: any = {};
-                                if (stop.user_notes) updatePayload.userNotes = stop.user_notes;
-                                if (stop.arrival_time) updatePayload.arrivalTime = stop.arrival_time;
-                                if (stop.departure_time) updatePayload.departureTime = stop.departure_time;
-                                if (stop.estimated_cost) updatePayload.estimatedCost = parseFloat(stop.estimated_cost);
-                                handleDraftUpdateStop(existingStop.id, updatePayload, 'AI');
-                            }
-                            break;
-                          case 'move':
-                            if (existingStop && targetDay) {
-                                const newTargetDay = displayItinerary?.days.find(d => d.dayNumber === stop.new_day_number);
-                                if (newTargetDay) {
-                                    // Our current reorder expects sourceIndex/destIndex in the SAME day.
-                                    // Wait, handleDraftReorderStops doesn't support cross-day reordering yet! 
-                                    // "Moving stops between days is not yet supported." was in onDragEnd.
-                                    // For now, we simulate move by remove + add.
-                                    handleDraftRemoveStop(existingStop.id);
-                                    handleDraftAddStop(newTargetDay.id, existingStop, 'AI');
-                                }
-                            }
-                            break;
-                        }
-                      });
+                      dispatchDraftActions(draftStops);
                     }}
                   />
                 </ResizablePanel>

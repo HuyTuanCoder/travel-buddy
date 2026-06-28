@@ -86,7 +86,7 @@ async def _run_chat(trip_id: str, message: str, user_id: str, correlation_id: st
                     content = str(getattr(tool_output, "content", tool_output)).strip()
                     status = "FAILED" if not content or content == "[]" or content.startswith("Error:") else "SUCCESS"
                     
-                    if status == "SUCCESS" and event["name"] in ["draft_add_stop", "draft_remove_stop", "draft_update_stop", "draft_move_stop_between_days"]:
+                    if status == "SUCCESS" and event["name"].startswith("draft_"):
                         import json
                         action_json = json.loads(content)
                         await streamer.stream_draft_update(action_json)

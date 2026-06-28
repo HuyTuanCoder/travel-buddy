@@ -112,3 +112,16 @@ export const moveStop = async (
     throw error.response?.data ?? error
   }
 }
+
+// ==================== PUT /itineraries/{id}/days/swap ====================
+
+export const swapDays = async (
+  itineraryId: string,
+  payload: { dayA: number; dayB: number },
+): Promise<void> => {
+  try {
+    await api.put(`/itineraries/${itineraryId}/days/swap`, payload)
+  } catch (error: any) {
+    throw error.response?.data ?? error
+  }
+}

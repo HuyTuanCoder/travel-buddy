@@ -5,7 +5,10 @@ from src.schemas.agent import AgentState
 
 from src.agent.tools.discovery import search_web, read_webpage, find_and_register_place
 from src.agent.tools.memory import search_past_conversations
-from src.agent.tools.draft import draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, draft_add_day, draft_remove_day
+from src.agent.tools.draft import (
+    draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, 
+    draft_add_day, draft_remove_day, draft_restore_day, draft_restore_stop, draft_swap_days
+)
 from src.core.config import get_llm
 import json
 from langchain_core.runnables import RunnableConfig
@@ -15,7 +18,8 @@ logger = structlog.get_logger(__name__)
 
 ALL_TOOLS = [
     search_web, read_webpage, find_and_register_place, search_past_conversations,
-    draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, draft_add_day, draft_remove_day
+    draft_add_stop, draft_remove_stop, draft_update_stop, draft_move_stop, 
+    draft_add_day, draft_remove_day, draft_restore_day, draft_restore_stop, draft_swap_days
 ]
 
 @node_error_boundary
@@ -115,8 +119,11 @@ async def call_executor(state: AgentState, config: RunnableConfig):
                             new_day.setdefault("stops", []).append(target_stop)
     
     # Construct a static System Prompt for identity
-    sys_msg = SystemMessage(content="You are an AI Travel Agent Executor.")
+    sys_msg = SystemMessage(content="""You are an AI Travel Agent Executor.
     
+    IMPORTANT MANDATE:
+    If the user's request is ambiguous (e.g., 'move it to the start' but you don't know which exact order, or 'swap that day' but you don't know which two days), DO NOT GUESS and DO NOT CALL TOOLS. 
+    Instead, output a natural language question asking the user to clarify exactly where they want it.""")
     # Construct an ephemeral context injection for the BOTTOM of the prompt
     ephemeral_context = "\n--- SYSTEM EXECUTION CONTEXT ---\n"
     

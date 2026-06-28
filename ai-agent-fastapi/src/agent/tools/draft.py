@@ -25,6 +25,17 @@ class DraftAddDayArgs(BaseModel):
 class DraftRemoveDayArgs(BaseModel):
     day_number: int = Field(description="The day number to completely remove.")
 
+class DraftRestoreDayArgs(BaseModel):
+    day_number: int = Field(description="The day number to restore from a ghosted (soft-deleted) state.")
+
+class DraftRestoreStopArgs(BaseModel):
+    google_place_id: str = Field(description="The Google Place ID of the stop to restore.")
+    day_number: int = Field(description="The day number the stop was on when removed.")
+
+class DraftSwapDaysArgs(BaseModel):
+    day_a: int = Field(description="The 1-indexed day number of the first day to swap.")
+    day_b: int = Field(description="The 1-indexed day number of the second day to swap.")
+
 # 2. Tool Bindings
 
 @tool("draft_add_stop", args_schema=DraftAddStopArgs)
@@ -36,6 +47,7 @@ def draft_add_stop(day_number: int, google_place_id: str, name: str, stop_type: 
     """
     draft_item = {
         "action": "add",
+        "is_draft": True,
         "day_number": day_number,
         "google_place_id": google_place_id,
         "name": name,
@@ -65,10 +77,12 @@ class DraftMoveStopArgs(BaseModel):
 @tool_error_boundary
 def draft_remove_stop(google_place_id: str, day_number: int) -> str:
     """
-    Call this tool to remove a stop from the user's itinerary DRAFT in memory.
+    Call this tool to remove a stop from the itinerary DRAFT.
+    Note: This performs a soft-delete (tombstone). The item is ghosted in the UI.
     """
     draft_item = {
         "action": "remove",
+        "is_draft": True,
         "google_place_id": google_place_id,
         "day_number": day_number
     }
@@ -82,6 +96,7 @@ def draft_update_stop(google_place_id: str, day_number: int, user_notes: str = "
     """
     draft_item = {
         "action": "update",
+        "is_draft": True,
         "google_place_id": google_place_id,
         "day_number": day_number,
         "user_notes": user_notes,
@@ -96,9 +111,11 @@ def draft_update_stop(google_place_id: str, day_number: int, user_notes: str = "
 def draft_move_stop(google_place_id: str, old_day_number: int, new_day_number: int, new_visit_order: int = None) -> str:
     """
     Call this tool to move a stop across days OR reorder it within the same day.
+    IMPORTANT: If the user is ambiguous (e.g., 'move this to the first day' but doesn't specify exact order), leave new_visit_order as null. The frontend will safely append it to the end of that day.
     """
     draft_item = {
         "action": "move",
+        "is_draft": True,
         "google_place_id": google_place_id,
         "old_day_number": old_day_number,
         "new_day_number": new_day_number
@@ -115,6 +132,7 @@ def draft_add_day(scheduled_date: str = "") -> str:
     """
     return json.dumps({
         "action": "add_day",
+        "is_draft": True,
         "scheduled_date": scheduled_date
     })
 
@@ -123,8 +141,51 @@ def draft_add_day(scheduled_date: str = "") -> str:
 def draft_remove_day(day_number: int) -> str:
     """
     Call this tool to remove an entire day and its stops from the itinerary DRAFT.
+    Note: This performs a soft-delete (tombstone). The day is ghosted in the UI.
     """
     return json.dumps({
         "action": "remove_day",
+        "is_draft": True,
         "day_number": day_number
+    })
+
+@tool("draft_restore_day", args_schema=DraftRestoreDayArgs)
+@tool_error_boundary
+def draft_restore_day(day_number: int) -> str:
+    """
+    Use this to undo the removal of a day. The frontend will un-ghost it.
+    Example: User says 'Actually, put Day 3 back', call draft_restore_day(day_number=3)
+    """
+    return json.dumps({
+        "action": "restore_day",
+        "is_draft": True,
+        "day_number": day_number
+    })
+
+@tool("draft_restore_stop", args_schema=DraftRestoreStopArgs)
+@tool_error_boundary
+def draft_restore_stop(google_place_id: str, day_number: int) -> str:
+    """
+    Use this to undo the removal of a stop.
+    Example: User says 'Wait, add back the Louvre', call draft_restore_stop(google_place_id='ChIJ...', day_number=2)
+    """
+    return json.dumps({
+        "action": "restore_stop",
+        "is_draft": True,
+        "google_place_id": google_place_id,
+        "day_number": day_number
+    })
+
+@tool("draft_swap_days", args_schema=DraftSwapDaysArgs)
+@tool_error_boundary
+def draft_swap_days(day_a: int, day_b: int) -> str:
+    """
+    Use this to completely swap the schedule of two days.
+    Example: User says 'Switch my Tuesday and Wednesday', call draft_swap_days(day_a=2, day_b=3)
+    """
+    return json.dumps({
+        "action": "swap_days",
+        "is_draft": True,
+        "day_a": day_a,
+        "day_b": day_b
     })

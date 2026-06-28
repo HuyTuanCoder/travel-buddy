@@ -306,4 +306,29 @@ public class TimelineService {
     log.info("[reorderStops] <<< Output: {} stops reordered", responses.size());
     return responses;
   }
+
+  // ==================== PUT /itineraries/{id}/days/swap ====================
+
+  @Transactional
+  public void swapDays(UUID itineraryId, SwapDaysRequest request, String userId) {
+    log.info("[swapDays] >>> Input: itineraryId={}, dayA={}, dayB={}, userId={}", itineraryId, request.getDayA(), request.getDayB(), userId);
+
+    accessGuard.verifyEditPermission(itineraryId, userId);
+
+    List<ItineraryDay> days = dayRepository.findByItineraryIdOrderByDayNumberAsc(itineraryId);
+    
+    ItineraryDay day1 = days.stream().filter(d -> d.getDayNumber().equals(request.getDayA())).findFirst()
+        .orElseThrow(() -> new InvalidRequestException("Day number not found: " + request.getDayA()));
+        
+    ItineraryDay day2 = days.stream().filter(d -> d.getDayNumber().equals(request.getDayB())).findFirst()
+        .orElseThrow(() -> new InvalidRequestException("Day number not found: " + request.getDayB()));
+
+    Integer temp = day1.getDayNumber();
+    day1.setDayNumber(day2.getDayNumber());
+    day2.setDayNumber(temp);
+
+    dayRepository.saveAll(List.of(day1, day2));
+    
+    log.info("[swapDays] <<< Output: day {} and day {} swapped", request.getDayA(), request.getDayB());
+  }
 }
